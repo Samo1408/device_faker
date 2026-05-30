@@ -1,39 +1,42 @@
 <template>
   <div class="template-page">
-    <OnlineTemplateLibraryView
-      v-if="onlineTemplatesStore.libraryOpen"
-      @close="closeOnlineLibrary"
-    />
-
-    <template v-else>
-      <TemplateHeader
-        :locale="locale"
-        @open-online="showOnlineLibrary"
-        @open-create="showCreateDialog"
-        @open-transfer="showTransferDialog"
-        @search="handleSearch"
+    <Transition :name="viewTransitionName" @after-enter="handleViewAfterEnter">
+      <OnlineTemplateLibraryView
+        v-if="onlineTemplatesStore.libraryOpen"
+        key="online-library"
+        @close="closeOnlineLibrary"
       />
 
-      <TemplateList
-        :entries="filteredTemplates"
-        :is-searching="searchQuery.length > 0"
-        @export="handleExport"
-        @edit="handleEdit"
-        @delete="deleteTemplateConfirm"
-      />
+      <div v-else key="template-list" class="template-home-view">
+        <TemplateHeader
+          :locale="locale"
+          @open-online="showOnlineLibrary"
+          @open-create="showCreateDialog"
+          @open-transfer="showTransferDialog"
+          @search="handleSearch"
+        />
 
-      <TemplateDialog
-        v-if="dialogVisible"
-        v-model="dialogVisible"
-        :is-editing="isEditing"
-        :locale="locale"
-        :template-name="editingTemplateName"
-        :template-data="editingTemplate"
-        @saved="handleTemplateSaved"
-      />
+        <TemplateList
+          :entries="filteredTemplates"
+          :is-searching="searchQuery.length > 0"
+          @export="handleExport"
+          @edit="handleEdit"
+          @delete="deleteTemplateConfirm"
+        />
 
-      <TemplateTransferDialog v-if="transferDialogVisible" v-model="transferDialogVisible" />
-    </template>
+        <TemplateDialog
+          v-if="dialogVisible"
+          v-model="dialogVisible"
+          :is-editing="isEditing"
+          :locale="locale"
+          :template-name="editingTemplateName"
+          :template-data="editingTemplate"
+          @saved="handleTemplateSaved"
+        />
+
+        <TemplateTransferDialog v-if="transferDialogVisible" v-model="transferDialogVisible" />
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -66,6 +69,9 @@ const { t, locale } = useI18n()
 const getMessageBox = useLazyMessageBox()
 
 const searchQuery = ref('')
+const viewTransitionName = ref<'template-library-forward' | 'template-library-back'>(
+  'template-library-forward'
+)
 
 const allTemplates = computed(() => configStore.templateEntries)
 
@@ -103,15 +109,21 @@ const editingTemplateName = ref<string | null>(null)
 const editingTemplate = ref<Template | null>(null)
 
 function showOnlineLibrary() {
+  viewTransitionName.value = 'template-library-forward'
   onlineTemplatesStore.openLibrary()
   void onlineTemplatesStore.ensureCatalogLoaded()
 }
 
 function closeOnlineLibrary() {
+  viewTransitionName.value = 'template-library-back'
   onlineTemplatesStore.closeLibrary()
 }
 
-useModalHistory(libraryOpen, () => onlineTemplatesStore.closeLibrary())
+function handleViewAfterEnter() {
+  window.dispatchEvent(new Event('resize'))
+}
+
+useModalHistory(libraryOpen, closeOnlineLibrary)
 useModalHistory(dialogVisible, () => {
   dialogVisible.value = false
 })
@@ -191,6 +203,8 @@ onActivated(() => {
 
 <style scoped>
 .template-page {
+  --template-view-slide-distance: 1.25rem;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -198,6 +212,73 @@ onActivated(() => {
   max-width: 100%;
   box-sizing: border-box;
   overflow: hidden;
+}
+
+.template-home-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+
+.template-library-forward-enter-active,
+.template-library-forward-leave-active,
+.template-library-back-enter-active,
+.template-library-back-leave-active {
+  transition:
+    opacity 220ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.template-library-forward-leave-active,
+.template-library-back-leave-active {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+}
+
+.template-library-forward-enter-active,
+.template-library-back-enter-active {
+  position: relative;
+  z-index: 2;
+}
+
+.template-library-forward-enter-from {
+  opacity: 0;
+  transform: translate3d(var(--template-view-slide-distance), 0, 0);
+}
+
+.template-library-forward-leave-to {
+  opacity: 0;
+  transform: translate3d(calc(var(--template-view-slide-distance) * -1), 0, 0);
+}
+
+.template-library-back-enter-from {
+  opacity: 0;
+  transform: translate3d(calc(var(--template-view-slide-distance) * -1), 0, 0);
+}
+
+.template-library-back-leave-to {
+  opacity: 0;
+  transform: translate3d(var(--template-view-slide-distance), 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .template-library-forward-enter-active,
+  .template-library-forward-leave-active,
+  .template-library-back-enter-active,
+  .template-library-back-leave-active {
+    transition-duration: 1ms;
+  }
+
+  .template-library-forward-enter-from,
+  .template-library-forward-leave-to,
+  .template-library-back-enter-from,
+  .template-library-back-leave-to {
+    transform: none;
+  }
 }
 </style>
 
