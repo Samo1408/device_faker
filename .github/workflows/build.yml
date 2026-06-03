@@ -62,6 +62,12 @@ jobs:
           sudo apt install -y gcc-multilib
           cargo install cargo-ndk --locked
 
+      - name: Type check webui
+        run: |
+          cd webui
+          npm ci
+          npm run type-check
+
       - name: Build device_faker
         run: |
           cargo run --package xtask -- build -r
