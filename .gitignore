@@ -1,4 +1,4 @@
 output/
 target/
 .cargo/
-.vscode/
+.zed/
