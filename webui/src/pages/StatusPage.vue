@@ -120,16 +120,6 @@
           </div>
         </div>
 
-        <div class="status-item clickable" @click="translatorsDialogVisible = true">
-          <div class="status-icon gradient-icon-5">
-            <Languages :size="32" />
-          </div>
-          <div class="status-info">
-            <span class="status-label">{{ t('status.translators.title') }}</span>
-            <span class="status-value">{{ t('status.translators.action') }}</span>
-          </div>
-        </div>
-
         <div class="status-item clickable" @click="followDialogVisible = true">
           <div class="status-icon gradient-icon-5">
             <HeartHandshake :size="32" />
@@ -138,6 +128,16 @@
             <span class="status-label">{{ t('status.follow.title') }}</span>
             <span class="status-value">{{ t('status.follow.action') }}</span>
             <span class="status-build">{{ t('status.follow.channels') }}</span>
+          </div>
+        </div>
+
+        <div class="status-item clickable" @click="translatorsDialogVisible = true">
+          <div class="status-icon gradient-icon-5">
+            <Languages :size="32" />
+          </div>
+          <div class="status-info">
+            <span class="status-label">{{ t('status.translators.title') }}</span>
+            <span class="status-value">{{ t('status.translators.action') }}</span>
           </div>
         </div>
       </div>
@@ -229,18 +229,12 @@
     >
       <div class="follow-dialog-content">
         <div class="follow-row">
-          <div class="follow-row-icon gradient-icon-1">
-            <Package :size="20" />
-          </div>
-          <div class="follow-row-body">
-            <span class="follow-row-label">{{ t('status.follow.module_name') }}</span>
-            <span class="follow-row-value">Device Faker</span>
-          </div>
-        </div>
-
-        <div class="follow-row">
-          <div class="follow-row-icon gradient-icon-2">
-            <UserRound :size="20" />
+          <div class="follow-row-icon gradient-icon-2 author-icon-wrapper">
+            <img
+              src="https://avatars.githubusercontent.com/u/97807424?v=4"
+              alt="Author"
+              class="author-avatar-icon"
+            />
           </div>
           <div class="follow-row-body">
             <span class="follow-row-label">{{ t('status.follow.author') }}</span>
@@ -342,8 +336,6 @@ import {
   Settings,
   Languages,
   HeartHandshake,
-  Package,
-  UserRound,
   MessageCircleMore,
   Github,
 } from 'lucide-vue-next'
@@ -823,6 +815,21 @@ onActivated(() => {
   height: 40px;
   border-radius: 12px;
   flex-shrink: 0;
+}
+
+.author-icon-wrapper {
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+}
+
+.author-avatar-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  object-fit: cover;
+  display: block;
 }
 
 .follow-row-body {
