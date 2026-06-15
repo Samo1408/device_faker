@@ -1040,14 +1040,12 @@ onUnmounted(() => {
   pointer-events: auto;
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-top: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 .dark .bottom-nav {
   background: rgba(30, 41, 59, 0.85);
   backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-top: 1px solid rgba(51, 65, 85, 0.4);
 }
 

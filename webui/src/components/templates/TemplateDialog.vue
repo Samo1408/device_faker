@@ -351,7 +351,6 @@ watch(
   flex-direction: column;
   background: rgba(255, 255, 255, 0.15) !important;
   backdrop-filter: blur(40px) saturate(150%) brightness(1.1);
-  -webkit-backdrop-filter: blur(40px) saturate(150%) brightness(1.1);
   border: 1px solid rgba(255, 255, 255, 0.4);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
   box-sizing: border-box;
@@ -364,7 +363,6 @@ watch(
   .template-dialog :deep(.el-dialog) {
     background: rgba(20, 20, 20, 0.6) !important;
     backdrop-filter: blur(40px) saturate(150%) brightness(0.9);
-    -webkit-backdrop-filter: blur(40px) saturate(150%) brightness(0.9);
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   }
@@ -382,7 +380,6 @@ watch(
 .template-dialog :deep(.el-dialog__header) {
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
@@ -398,7 +395,6 @@ watch(
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   flex-shrink: 0;
 }
 
@@ -412,7 +408,6 @@ watch(
 .template-dialog :deep(.el-overlay) {
   z-index: 2000 !important;
   backdrop-filter: blur(8px) saturate(110%) !important;
-  -webkit-backdrop-filter: blur(8px) saturate(110%) !important;
   background-color: rgba(0, 0, 0, 0.25) !important;
   contain: layout style paint;
   overflow: hidden;
@@ -421,7 +416,6 @@ watch(
 @media (prefers-color-scheme: dark) {
   .template-dialog :deep(.el-overlay) {
     backdrop-filter: blur(8px) saturate(110%) !important;
-    -webkit-backdrop-filter: blur(8px) saturate(110%) !important;
     background-color: rgba(0, 0, 0, 0.4) !important;
   }
 }
@@ -442,14 +436,12 @@ watch(
 <style>
 .template-dialog-modal {
   backdrop-filter: blur(12px) saturate(120%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(120%) !important;
   background-color: rgba(0, 0, 0, 0.25) !important;
 }
 
 @media (prefers-color-scheme: dark) {
   .template-dialog-modal {
     backdrop-filter: blur(12px) saturate(120%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(120%) !important;
     background-color: rgba(0, 0, 0, 0.4) !important;
   }
 }

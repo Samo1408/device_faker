@@ -89,7 +89,6 @@ body {
 .glass-effect {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px) saturate(180%);
-  -webkit-backdrop-filter: blur(12px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.5);
   box-shadow: 0 8px 32px rgba(14, 165, 233, 0.15);
   /* 确保布局稳定 */
@@ -107,7 +106,6 @@ body {
   border: 1px solid rgba(51, 65, 85, 0.5);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(12px) saturate(140%);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
 }
 
 /* 强制主题切换时的样式重绘 */
@@ -175,7 +173,6 @@ body {
   pointer-events: auto;
   z-index: 2000 !important;
   backdrop-filter: blur(8px) saturate(120%) !important;
-  -webkit-backdrop-filter: blur(8px) saturate(120%) !important;
   background-color: rgba(0, 0, 0, 0.35) !important;
 }
 
@@ -183,14 +180,12 @@ body {
   pointer-events: auto;
   z-index: 3000 !important;
   backdrop-filter: blur(12px) saturate(130%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(130%) !important;
   background-color: rgba(0, 0, 0, 0.45) !important;
 }
 
 /* 深色模式下的遮罩层 */
 .dark .el-overlay.is-message-box {
   backdrop-filter: blur(12px) saturate(130%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(130%) !important;
   background-color: rgba(0, 0, 0, 0.6) !important;
 }
 
@@ -349,7 +344,6 @@ body {
 
 .delete-confirm-box.el-message-box {
   backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
 }
 
 /* 确保 MessageBox 的父容器也有正确的 z-index */

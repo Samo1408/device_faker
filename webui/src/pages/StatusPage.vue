@@ -960,14 +960,12 @@ onActivated(() => {
 .follow-dialog :deep(.el-dialog) {
   background: rgba(255, 255, 255, 0.15) !important;
   backdrop-filter: blur(40px) saturate(150%) brightness(1.1);
-  -webkit-backdrop-filter: blur(40px) saturate(150%) brightness(1.1);
   border: 1px solid rgba(255, 255, 255, 0.4);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
 }
 
 .follow-dialog-modal {
   backdrop-filter: blur(12px) saturate(120%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(120%) !important;
   background-color: rgba(0, 0, 0, 0.25) !important;
 }
 
@@ -975,14 +973,12 @@ onActivated(() => {
   .follow-dialog :deep(.el-dialog) {
     background: rgba(20, 20, 20, 0.6) !important;
     backdrop-filter: blur(40px) saturate(150%) brightness(0.9);
-    -webkit-backdrop-filter: blur(40px) saturate(150%) brightness(0.9);
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   }
 
   .follow-dialog-modal {
     backdrop-filter: blur(12px) saturate(120%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(120%) !important;
     background-color: rgba(0, 0, 0, 0.4) !important;
   }
 }

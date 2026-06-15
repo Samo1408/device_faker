@@ -285,20 +285,17 @@ onActivated(() => {
 <style>
 .delete-confirm-modal {
   backdrop-filter: blur(12px) saturate(120%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(120%) !important;
   background-color: rgba(0, 0, 0, 0.15) !important;
 }
 
 .dark .delete-confirm-modal {
   backdrop-filter: blur(12px) saturate(120%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(120%) !important;
   background-color: rgba(0, 0, 0, 0.4) !important;
 }
 
 .delete-confirm-box {
   background: rgba(255, 255, 255, 0.95) !important;
   backdrop-filter: blur(40px) saturate(150%) brightness(1.1) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(150%) brightness(1.1) !important;
   border: 1px solid rgba(0, 0, 0, 0.1) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
 }
@@ -306,7 +303,6 @@ onActivated(() => {
 .dark .delete-confirm-box {
   background: rgba(20, 20, 20, 0.6) !important;
   backdrop-filter: blur(40px) saturate(150%) brightness(0.9) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(150%) brightness(0.9) !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
 }
