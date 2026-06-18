@@ -14,85 +14,87 @@ default_mode = "lite"
 # CPU 伪装预设表
 # 在模板或 [[apps]] 中使用 cpu_spoof = "预设名称" 引用
 [cpu_presets]
-kirin_9020a = """Processor       : AArch64 Processor rev 1 (aarch64)
-Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm
+kirin_9030pro = """Processor       : AArch64 Processor rev 0 (aarch64)
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit ilrcpc flagm ssbs sb pacg dcpodp flagm2 frint svei8mm i8mm bti
 CPU implementer : 0x48
 CPU architecture: 8
 CPU variant     : 0x0
-CPU part        : 0xd05
-CPU revision    : 1
+CPU part        : 0xd06
+CPU revision    : 0
 
 processor       : 0
-BogoMIPS        : 52.00
+BogoMIPS        : 38.40
 CPU implementer : 0x48
 CPU architecture: 8
 CPU variant     : 0x0
-CPU part        : 0xd05
-CPU revision    : 1
+CPU part        : 0xd06
+CPU revision    : 0
 
 processor       : 1
-BogoMIPS        : 52.00
+BogoMIPS        : 38.40
 CPU implementer : 0x48
 CPU architecture: 8
 CPU variant     : 0x1
-CPU part        : 0xd46
-CPU revision    : 1
+CPU part        : 0xd47
+CPU revision    : 0
 
 processor       : 2
-BogoMIPS        : 52.00
+BogoMIPS        : 38.40
 CPU implementer : 0x48
 CPU architecture: 8
 CPU variant     : 0x1
-CPU part        : 0xd46
-CPU revision    : 1
+CPU part        : 0xd47
+CPU revision    : 0
 
 processor       : 3
-BogoMIPS        : 52.00
+BogoMIPS        : 38.40
 CPU implementer : 0x48
 CPU architecture: 8
 CPU variant     : 0x1
-CPU part        : 0xd46
-CPU revision    : 1
+CPU part        : 0xd47
+CPU revision    : 0
 
 processor       : 4
-BogoMIPS        : 52.00
+BogoMIPS        : 38.40
 CPU implementer : 0x48
 CPU architecture: 8
-CPU variant     : 0x2
-CPU part        : 0xd23
-CPU revision    : 1
+CPU variant     : 0x1
+CPU part        : 0xd47
+CPU revision    : 0
 
 processor       : 5
-BogoMIPS        : 52.00
-CPU implementer : 0x48
+BogoMIPS        : 38.40
+CPU implementer : 0x41
 CPU architecture: 8
-CPU variant     : 0x2
-CPU part        : 0xd23
-CPU revision    : 1
+CPU variant     : 0x0
+CPU part        : 0xd46
+CPU revision    : 0
 
 processor       : 6
-BogoMIPS        : 52.00
-CPU implementer : 0x48
+BogoMIPS        : 38.40
+CPU implementer : 0x41
 CPU architecture: 8
-CPU variant     : 0x2
-CPU part        : 0xd23
-CPU revision    : 1
+CPU variant     : 0x0
+CPU part        : 0xd46
+CPU revision    : 0
 
 processor       : 7
-BogoMIPS        : 52.00
-CPU implementer : 0x48
+BogoMIPS        : 38.40
+CPU implementer : 0x41
 CPU architecture: 8
-CPU variant     : 0x2
-CPU part        : 0xd23
-CPU revision    : 1
+CPU variant     : 0x0
+CPU part        : 0xd46
+CPU revision    : 0
 
-Hardware        : HiSilicon Kirin 9020A"""
+processor       : 8
+BogoMIPS        : 38.40
+CPU implementer : 0x41
+CPU architecture: 8
+CPU variant     : 0x0
+CPU part        : 0xd46
+CPU revision    : 0
 
-# GPU 伪装示例 preset
-# 高级用户可手动在模板/应用的 gpu_spoof 中引用，
-# 或在 custom_props 中直接使用这些属性。
-[gpu_presets]
-hisi_maleoon_920 = { "ro.gpu.vendor" = "HiSilicon", "ro.gpu.model" = "Maleoon 920", "ro.hardware.gpu" = "Maleoon 920", "ro.hisi.gpu" = "maleoon920" }
+Hardware        : HiSilicon Kirin 9030 Pro"""
 
 # 调试模式（默认关闭以提高隐蔽性）
 # 设置为 true 可以在 logcat 中看到详细日志，方便排查问题

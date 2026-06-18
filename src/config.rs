@@ -51,12 +51,6 @@ pub struct DeviceTemplate {
     /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
     #[serde(default)]
     pub cpu_spoof_custom: Option<String>,
-    /// GPU 伪装预设名称（引用 [gpu_presets]）
-    #[serde(default)]
-    pub gpu_spoof: Option<String>,
-    /// 自定义 GPU 属性映射（优先级高于 gpu_spoof）
-    #[serde(default)]
-    pub gpu_spoof_custom: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -107,12 +101,6 @@ pub struct AppConfig {
     /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
     #[serde(default)]
     pub cpu_spoof_custom: Option<String>,
-    /// GPU 伪装预设名称（引用 [gpu_presets]）
-    #[serde(default)]
-    pub gpu_spoof: Option<String>,
-    /// 自定义 GPU 属性映射（优先级高于 gpu_spoof）
-    #[serde(default)]
-    pub gpu_spoof_custom: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,9 +126,6 @@ pub struct Config {
     /// CPU 伪装预设表
     #[serde(default)]
     pub cpu_presets: HashMap<String, String>,
-    /// GPU 伪装预设表（属性名 -> 属性值）
-    #[serde(default)]
-    pub gpu_presets: HashMap<String, HashMap<String, String>>,
 }
 
 fn default_mode() -> String {
@@ -191,13 +176,9 @@ impl Config {
                     .unwrap_or_else(|| self.default_mode.clone()),
                 cpu_spoof: app.cpu_spoof.clone(),
                 cpu_spoof_custom: app.cpu_spoof_custom.clone(),
-                gpu_spoof: app.gpu_spoof.clone(),
-                gpu_spoof_custom: app.gpu_spoof_custom.clone(),
                 cpuinfo_content: None,
-                gpu_props: None,
             };
             merged.cpuinfo_content = merged.resolve_cpuinfo(self);
-            merged.gpu_props = merged.resolve_gpu_props(self);
             return Some(merged);
         }
 
@@ -226,13 +207,9 @@ impl Config {
                     .unwrap_or_else(|| self.default_mode.clone()),
                 cpu_spoof: template.cpu_spoof.clone(),
                 cpu_spoof_custom: template.cpu_spoof_custom.clone(),
-                gpu_spoof: template.gpu_spoof.clone(),
-                gpu_spoof_custom: template.gpu_spoof_custom.clone(),
                 cpuinfo_content: None,
-                gpu_props: None,
             };
             merged.cpuinfo_content = merged.resolve_cpuinfo(self);
-            merged.gpu_props = merged.resolve_gpu_props(self);
             return Some(merged);
         }
 
@@ -334,13 +311,6 @@ impl Config {
             map.insert("ro.system.build.version.sdk".to_string(), sdk_str.clone());
             map.insert("ro.vendor.build.version.sdk".to_string(), sdk_str.clone());
             map.insert("ro.product.build.version.sdk".to_string(), sdk_str.clone());
-        }
-
-        // GPU 伪装属性（优先级低于自定义属性，允许被 custom_props 覆盖）
-        if let Some(gpu_props) = &merged.gpu_props {
-            for (key, value) in gpu_props {
-                map.insert(key.clone(), value.clone());
-            }
         }
 
         // 自定义属性
@@ -453,14 +423,8 @@ pub struct MergedAppConfig {
     pub cpu_spoof: Option<String>,
     /// 自定义 CPU 伪装内容
     pub cpu_spoof_custom: Option<String>,
-    /// GPU 伪装预设名称
-    pub gpu_spoof: Option<String>,
-    /// 自定义 GPU 属性映射
-    pub gpu_spoof_custom: Option<HashMap<String, String>>,
     /// 最终要挂载到 /proc/cpuinfo 的内容（已解析完成）
     pub cpuinfo_content: Option<String>,
-    /// 最终要注入的 GPU 属性
-    pub gpu_props: Option<HashMap<String, String>>,
 }
 
 impl MergedAppConfig {
@@ -478,27 +442,6 @@ impl MergedAppConfig {
             .or(config.default_cpu_spoof.as_ref())?;
 
         config.cpu_presets.get(preset_name).cloned()
-    }
-
-    /// 计算最终 GPU 伪装属性
-    pub fn resolve_gpu_props(&self, config: &Config) -> Option<HashMap<String, String>> {
-        let mut result = HashMap::new();
-
-        if let Some(preset_name) = &self.gpu_spoof
-            && let Some(preset) = config.gpu_presets.get(preset_name)
-        {
-            result.extend(preset.clone());
-        }
-
-        if let Some(custom) = &self.gpu_spoof_custom {
-            result.extend(custom.clone());
-        }
-
-        if result.is_empty() {
-            None
-        } else {
-            Some(result)
-        }
     }
 }
 

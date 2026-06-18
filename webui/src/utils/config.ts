@@ -124,12 +124,6 @@ function normalizeDeviceInfoFields(source: UnknownRecord): Partial<DeviceInfo> {
   const cpuSpoofCustom = asOptionalString(source.cpu_spoof_custom)
   if (cpuSpoofCustom !== undefined) normalized.cpu_spoof_custom = cpuSpoofCustom
 
-  const gpuSpoof = asOptionalString(source.gpu_spoof)
-  if (gpuSpoof !== undefined) normalized.gpu_spoof = gpuSpoof
-
-  const gpuSpoofCustom = normalizeCustomProps(source.gpu_spoof_custom)
-  if (gpuSpoofCustom !== undefined) normalized.gpu_spoof_custom = gpuSpoofCustom
-
   return normalized
 }
 
@@ -199,10 +193,6 @@ export function sanitizeConfigForSave(input: Config): Config {
 
   if (input.cpu_presets && Object.keys(input.cpu_presets).length > 0) {
     normalized.cpu_presets = input.cpu_presets
-  }
-
-  if (input.gpu_presets && Object.keys(input.gpu_presets).length > 0) {
-    normalized.gpu_presets = input.gpu_presets
   }
 
   if (input.templates) {

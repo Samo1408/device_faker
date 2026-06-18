@@ -27,8 +27,6 @@ export interface DeviceInfo {
   force_denylist_unmount?: boolean
   cpu_spoof?: string
   cpu_spoof_custom?: string
-  gpu_spoof?: string
-  gpu_spoof_custom?: CustomProps
 }
 
 // 机型模板接口
@@ -114,7 +112,6 @@ export interface Config {
   debug?: boolean
   default_cpu_spoof?: string
   cpu_presets?: Record<string, string>
-  gpu_presets?: Record<string, CustomProps>
   templates?: Record<string, Template>
   apps?: AppConfig[]
 }
