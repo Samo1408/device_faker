@@ -1,19 +1,18 @@
 use std::{
     ffi::CString,
     fs,
+    io::Read,
+    io::Write,
+    os::unix::io::AsRawFd,
     os::unix::net::UnixStream,
-    path::Path,
-    thread,
-    time::{Duration, Instant},
+    sync::atomic::{AtomicI32, Ordering},
 };
 
 use anyhow::{Context, Result};
-use libc::{MNT_DETACH, MS_BIND};
+use libc::MS_BIND;
 use log::{error, info, warn};
 
-use crate::companion::{
-    CompanionRequest, CompanionResponse, send_companion_command, write_companion_response,
-};
+use crate::companion::{CompanionRequest, CompanionResponse, write_companion_response};
 use crate::config::MergedAppConfig;
 use zygisk_api::api::{V4, ZygiskApi};
 
@@ -40,6 +39,16 @@ const SELINUX_CONTEXT: &str = "u:object_r:system_file:s0";
 /// 通过 companion 进程在目标应用的 mount namespace 中执行 bind mount。
 /// Zygisk 框架保证 companion 进程已经位于目标进程的 mount namespace 中，
 /// 因此不需要手动 setns。
+///
+/// app 退出检测由 companion 侧的 `pidfd_open` + `poll()` 完成，
+/// 与 socket fd 完全独立，无 fd 继承问题。
+static LEAKED_FD: AtomicI32 = AtomicI32::new(-1);
+
+/// **Socket 生命周期**：`with_companion` 内部的 `companion_sock` 是局部变量，
+/// 闭包返回后自动 drop 关闭 fd。因此我们在闭包内调用 `libc::dup()` 复制 fd，
+/// 将副本存入 `LEAKED_FD`。原始 fd 随闭包结束关闭，副本保持打开。
+/// 但注意：副本在 `apply_cpu_spoof` 中被**立即关闭**，不会泄漏到 app 进程。
+/// app 退出检测由 companion 侧的 `pidfd_open` + `poll()` 完成。
 pub fn apply_cpu_spoof(
     api: &mut ZygiskApi<V4>,
     merged: &MergedAppConfig,
@@ -63,7 +72,19 @@ pub fn apply_cpu_spoof(
         content: content.clone(),
     });
 
-    let response = send_companion_command(api, &request)?;
+    // 发送请求并获取响应。
+    // 现在 app 退出检测由 companion 侧的 pidfd + poll 完成，
+    // 不再需要泄漏 socket fd。dup'd fd 在 companion 返回后立即关闭。
+    let response = send_companion_command_leak_fd(api, &request)?;
+
+    // 立即关闭泄漏的 fd，避免它被 fork 到 app 进程。
+    // pidfd 方案完全独立于 socket，不需要这个 fd 存活。
+    let leaked = LEAKED_FD.swap(-1, Ordering::SeqCst);
+    if leaked >= 0 {
+        unsafe { libc::close(leaked) };
+        info!("Closed leaked companion fd {leaked} (pidfd handles monitoring)");
+    }
+
     if response.status != 0 {
         anyhow::bail!(
             response
@@ -79,10 +100,58 @@ pub fn apply_cpu_spoof(
     Ok(())
 }
 
+/// 与 `send_companion_command` 相同，但通过 `libc::dup()` 复制 socket fd。
+///
+/// `with_companion` 闭包返回后 `companion_sock`（局部变量）自动 drop 关闭原始 fd，
+/// 因此必须用 `libc::dup()` 复制一份 fd 以保持 socket 打开直到响应读取完成。
+/// 副本存入 `LEAKED_FD`，在 `apply_cpu_spoof` 中被立即关闭。
+/// app 退出检测由 companion 侧的 pidfd + poll 完成，不依赖 socket 状态。
+fn send_companion_command_leak_fd(
+    api: &mut ZygiskApi<V4>,
+    request: &CompanionRequest,
+) -> anyhow::Result<CompanionResponse> {
+    let payload = serde_json::to_vec(request)?;
+    let response = api
+        .with_companion(|stream| -> anyhow::Result<CompanionResponse> {
+            stream.write_all(&(payload.len() as u32).to_le_bytes())?;
+            stream.write_all(&payload)?;
+            stream.flush()?;
+
+            let mut len_buf = [0u8; 4];
+            stream.read_exact(&mut len_buf)?;
+            let resp_len = u32::from_le_bytes(len_buf) as usize;
+            let mut resp_buf = vec![0u8; resp_len];
+            stream.read_exact(&mut resp_buf)?;
+
+            let resp = serde_json::from_slice::<CompanionResponse>(&resp_buf)?;
+
+            // dup'd fd 仅用于保持 socket 打开直到响应读取完成，之后立即关闭。
+            // app 退出检测由 companion 侧的 pidfd + poll 完成。
+            let dup_fd = unsafe { libc::dup(stream.as_raw_fd()) };
+            if dup_fd < 0 {
+                anyhow::bail!("dup(fd) failed: {}", std::io::Error::last_os_error());
+            }
+            LEAKED_FD.store(dup_fd, Ordering::SeqCst);
+            info!("Dup'd companion fd {dup_fd} (will close after response)");
+
+            Ok(resp)
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to talk to companion: {e}"))??;
+
+    Ok(response)
+}
+
 /// Companion 进程入口：处理 CPU 伪装请求。
-/// 负责 bind mount，并 fork 一个独立子进程在 app 退出后 umount + 清理源文件。
-/// companion 本身不阻塞等待 app 退出——socket 在 pre_app_specialize 后同步关闭，
-/// umount 逻辑由独立 daemon 子进程承担。
+///
+/// **进程退出检测方案：`pidfd_open` + `poll()`**
+///
+/// Companion 直接在当前进程阻塞等待 app 退出，**不 fork 子进程**。
+/// 每个 companion 连接是独立的，阻塞不影响其他 app 的 companion 请求。
+/// 这彻底消除了 fork 模型中旧 watcher 与新 mount 之间的竞态条件。
+///
+/// `pidfd_open` 打开目标进程的 fd（Linux 5.3+），与 socket 完全独立。
+/// `poll(pidfd)` 在进程退出时被内核唤醒（POLLIN），是真正的事件驱动。
+/// 对旧内核回退到 /proc/<pid> 存在性检查。
 pub fn handle_companion_cpu_spoof(
     stream: &mut UnixStream,
     request: crate::companion::CpuSpoofRequest,
@@ -91,16 +160,90 @@ pub fn handle_companion_cpu_spoof(
     #[cfg(target_os = "android")]
     crate::file_logger::init();
 
-    let response = match do_cpu_spoof_setup(request.pid, &request.content) {
-        Ok(()) => CompanionResponse::ok(),
+    let pid = request.pid;
+    info!(
+        "Companion cpu_spoof handler entered, pid={pid}, self_pid={}",
+        std::process::id()
+    );
+
+    let setup_ok = match do_cpu_spoof_setup(pid, &request.content) {
+        Ok(()) => true,
         Err(e) => {
-            error!("CPU spoof setup failed: {e}");
-            CompanionResponse::err(e.to_string())
+            error!("CPU spoof setup failed for pid {pid}: {e}");
+            let response = CompanionResponse::err(e.to_string());
+            if let Err(e) = write_companion_response(stream, &response) {
+                warn!("Failed to write CPU spoof response: {e}");
+            }
+            false
         }
     };
 
-    if let Err(e) = write_companion_response(stream, &response) {
-        warn!("Failed to write CPU spoof response: {e}");
+    if setup_ok {
+        // 发送 OK 给 module，让 app 继续启动。
+        if let Err(e) = write_companion_response(stream, &CompanionResponse::ok()) {
+            warn!("Failed to write CPU spoof response: {e}");
+        }
+
+        // 当前 companion 连接已服务完毕，直接阻塞等待 app 退出。
+        // 每个 companion 是独立的，阻塞不影响其他 app。
+        // 不 fork 子进程——彻底消除旧 watcher 与新 mount 之间的竞态。
+        wait_for_app_exit(pid);
+        cleanup_mount_and_source(pid);
+    }
+}
+
+/// 使用 `pidfd_open` + `poll()` 阻塞等待目标进程退出。
+///
+/// `pidfd_open` (Linux 5.3+, Android API 31 所需内核版本) 返回一个专门的文件描述符，
+/// 当目标进程退出时内核将其标记为可读。`poll()` 阻塞直到可读，是纯事件驱动。
+/// 与 socket EOF 方案不同，pidfd 不涉及任何 fd 继承问题。
+///
+/// 对不支持 `pidfd_open` 的旧内核，自动回退到 `/proc/<pid>` 存在性检查。
+fn wait_for_app_exit(pid: u32) {
+    // 尝试 pidfd_open（syscall 434 on aarch64）
+    let pidfd =
+        unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0 as libc::c_uint) };
+
+    if pidfd >= 0 {
+        let pidfd = pidfd as i32;
+        info!("Monitoring app pid {pid} via pidfd {pidfd} (event-driven)");
+
+        loop {
+            let mut pfd = libc::pollfd {
+                fd: pidfd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let ret = unsafe { libc::poll(&mut pfd, 1, -1) };
+            if ret > 0 {
+                info!("pidfd signaled — app (pid {pid}) has exited");
+                break;
+            }
+            if ret < 0 {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
+                warn!("poll(pidfd) error for pid {pid}: {err}");
+                break;
+            }
+        }
+
+        unsafe { libc::close(pidfd) };
+        return;
+    }
+
+    // Fallback：pidfd_open 不可用（旧内核），使用 /proc/<pid> 检查。
+    let err = std::io::Error::last_os_error();
+    warn!("pidfd_open failed for pid {pid}: {err}, falling back to procfs check");
+
+    let proc_path = format!("/proc/{pid}");
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        if !std::path::Path::new(&proc_path).exists() {
+            info!("App (pid {pid}) exited (procfs check)");
+            break;
+        }
     }
 }
 
@@ -137,82 +280,56 @@ fn do_cpu_spoof_setup(pid: u32, content: &str) -> Result<()> {
 
     info!("Successfully mounted fake cpuinfo to {PROC_CPUINFO} for pid {pid}");
 
-    // 挂载成功后 fork 一个独立子进程：app 退出时 umount 并删除源文件。
-    // 这样 /proc/self/mountinfo 中的 bind mount 痕迹会随 app 退出立即消失，
-    // 同时清理 cpu_<pid> 源文件。fork 在 companion 写响应之前完成，
-    // 故 companion 仍能同步返回，不阻塞 socket。
-    if let Err(e) = spawn_cpu_umount_watcher(pid, internal_path.clone()) {
-        warn!("Failed to spawn CPU umount watcher for pid {pid}: {e}");
-        warn!(
-            "Bind mount will be released by namespace destruction on app exit, \
-             but the source file will not be cleaned up automatically"
-        );
+    // 读回验证：确认 bind mount 对当前 namespace 可见，且内容正确。
+    match fs::read_to_string(PROC_CPUINFO) {
+        Ok(actual) if actual == content => {
+            info!("Mount verification passed for pid {pid}");
+        }
+        Ok(actual) => {
+            warn!(
+                "Mount verification MISMATCH for pid {pid}: \
+                 expected {} bytes, got {} bytes — bind mount may not be visible",
+                content.len(),
+                actual.len()
+            );
+        }
+        Err(e) => {
+            warn!("Mount verification read failed for pid {pid}: {e}");
+        }
     }
+
+    // 不在 setup 中 fork watcher：app 退出检测由 handle_companion_cpu_spoof
+    // 中的 pidfd + poll 方案完成。
 
     Ok(())
 }
 
-/// Fork 一个独立 daemon 子进程，轮询 `/proc/<pid>` 是否存在。
-/// 进程消失（app 退出）后 umount /proc/cpuinfo 并删除源文件。
+/// 执行 umount 和源文件清理。在 companion 检测到 app 退出后调用。
 ///
-/// 复用 resetprop watcher（`companion.rs::spawn_restore_watcher`）的
-/// fork + setsid 模式：watcher 脱离 companion 进程组独立运行，
-/// 不持有 companion socket，不影响 companion 同步返回。
-fn spawn_cpu_umount_watcher(pid: u32, internal_path: String) -> Result<()> {
-    unsafe {
-        match libc::fork() {
-            -1 => anyhow::bail!("fork failed: {}", std::io::Error::last_os_error()),
-            0 => {
-                if libc::setsid() == -1 {
-                    libc::_exit(1);
-                }
-                if let Err(e) = watch_and_cleanup(pid, &internal_path) {
-                    error!("CPU umount watcher failed for pid {pid}: {e}");
-                }
-                libc::_exit(0);
-            }
-            _ => Ok(()),
-        }
-    }
-}
+/// `umount2(MNT_DETACH)` 执行 lazy detach：立即从挂载层级移除，
+/// 已持有的 fd 仍可继续读直到关闭。如果 mount 已随 namespace 销毁消失，
+/// umount 会返回 EINVAL，视为正常。
+fn cleanup_mount_and_source(pid: u32) {
+    let internal_path = format!("{CPU_SPOOF_STATE_DIR}/cpu_{pid}");
 
-fn watch_and_cleanup(pid: u32, internal_path: &str) -> Result<()> {
-    const POLL_INTERVAL: Duration = Duration::from_millis(200);
-    // 设置一个上限，避免异常情况下 watcher 永久存活（如 /proc 被遮挡导致误判）。
-    // 1 小时后强制清理退出。
-    const MAX_LIFETIME: Duration = Duration::from_secs(3600);
-    let proc_path = format!("/proc/{pid}");
-    let deadline = Instant::now() + MAX_LIFETIME;
-
-    loop {
-        if !Path::new(&proc_path).exists() {
-            break;
+    let target = match CString::new(PROC_CPUINFO) {
+        Ok(t) => t,
+        Err(e) => {
+            warn!("Failed to create CString for umount: {e}");
+            return;
         }
-        if Instant::now() > deadline {
-            warn!("CPU umount watcher reached max lifetime for pid {pid}, forcing cleanup");
-            break;
-        }
-        thread::sleep(POLL_INTERVAL);
-    }
-
-    // app 已退出（或超时）：umount 并清理源文件。
-    // umount2 + MNT_DETACH：lazy detach，立即从挂载层级移除，
-    // 已有 fd 引用仍可继续读直到关闭。
-    let target = CString::new(PROC_CPUINFO)?;
-    let ret = unsafe { libc::umount2(target.as_ptr(), MNT_DETACH) };
+    };
+    let ret = unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) };
     if ret != 0 {
         let err = std::io::Error::last_os_error();
-        // umount 失败通常意味着 mount 已随 namespace 销毁而消失，仅记录。
         warn!("umount2 /proc/cpuinfo failed (may already be gone): {err}");
     } else {
         info!("umounted fake cpuinfo for pid {pid}");
     }
 
-    if let Err(e) = fs::remove_file(internal_path) {
+    if let Err(e) = fs::remove_file(&internal_path) {
         warn!("Failed to remove cpuinfo source {internal_path}: {e}");
     }
-
-    Ok(())
 }
 
 fn ensure_dir(path: &str) -> Result<()> {

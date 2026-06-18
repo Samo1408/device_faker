@@ -58,7 +58,8 @@ static INIT_ONCE: Once = Once::new();
 /// - Zygisk 进程没有 root 权限，先缓冲到内存，在 pre_app_specialize 时通过 companion 批量写入。
 pub fn init() {
     INIT_ONCE.call_once(|| {
-        if let Ok(file) = open_log_file()
+        let file = open_log_file();
+        if let Ok(file) = file
             && let Ok(mut inner) = LOGGER.lock()
         {
             *inner = LoggerInner::File(file);

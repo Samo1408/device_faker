@@ -85,7 +85,7 @@ impl MyModule {
         // 产生的所有日志都能发给 companion 落盘。
         if let Err(e) = flush_log_buffer_to_companion(api) {
             // 这里不能用 error!，否则会产生新的日志又无法 flush。
-            // 静默失败，依赖 /data/local/tmp/ fallback（如果可用）。
+            // 静默失败，日志将丢失。
             let _ = e;
         }
 

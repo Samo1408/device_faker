@@ -409,20 +409,13 @@ fn restore_props_batch(backups: &[PropBackup]) -> anyhow::Result<()> {
 }
 
 const LOG_PATH: &str = "/data/adb/device_faker/logs/device_faker.log";
-const FALLBACK_LOG_PATH: &str = "/data/local/tmp/device_faker_companion.log";
 
 fn write_log_lines(request: WriteLogRequest) -> anyhow::Result<()> {
     if request.lines.is_empty() {
         return Ok(());
     }
 
-    let result = write_log_lines_to_path(LOG_PATH, &request.lines);
-    if result.is_err() {
-        // 主日志目录写失败时，fallback 到 /data/local/tmp/
-        let _ = write_log_lines_to_path(FALLBACK_LOG_PATH, &request.lines);
-    }
-
-    result
+    write_log_lines_to_path(LOG_PATH, &request.lines)
 }
 
 fn write_log_lines_to_path(path: &str, lines: &[String]) -> anyhow::Result<()> {
