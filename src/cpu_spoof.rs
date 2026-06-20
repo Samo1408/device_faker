@@ -1,8 +1,7 @@
 use std::{
     ffi::CString,
     fs,
-    io::Read,
-    io::Write,
+    io::{Read, Write},
     os::unix::io::AsRawFd,
     os::unix::net::UnixStream,
     sync::atomic::{AtomicI32, Ordering},
@@ -37,8 +36,15 @@ const SELINUX_CONTEXT: &str = "u:object_r:system_file:s0";
 
 /// 在 app specialize 时触发 CPU 伪装。
 /// 通过 companion 进程在目标应用的 mount namespace 中执行 bind mount。
-/// Zygisk 框架保证 companion 进程已经位于目标进程的 mount namespace 中，
-/// 因此不需要手动 setns。
+///
+/// **Mount namespace 策略**：Zygisk companion（zygiskd）运行在 root mount namespace
+/// （从 magiskd fork，不执行 setns）。/proc 在 Android 上是 MS_PRIVATE 传播，
+/// root namespace 的 bind mount 不会传播到 app 的独立 namespace。
+///
+/// 因为 companion 可能是**多线程**的（线程池），直接调用 `setns(CLONE_NEWNS)`
+/// 会返回 `EINVAL`（Linux 对多线程进程拒绝 CLONE_NEWNS）。
+/// 所以 mount/unmount 操作通过 **fork 子进程** 完成：子进程在 fork 后是单线程的，
+/// 可以安全调用 `setns` 切换到 app 的 mount namespace。
 ///
 /// app 退出检测由 companion 侧的 `pidfd_open` + `poll()` 完成，
 /// 与 socket fd 完全独立，无 fd 继承问题。
@@ -145,7 +151,7 @@ fn send_companion_command_leak_fd(
 ///
 /// **进程退出检测方案：`pidfd_open` + `poll()`**
 ///
-/// Companion 直接在当前进程阻塞等待 app 退出，**不 fork 子进程**。
+/// Companion 直接在当前线程阻塞等待 app 退出。
 /// 每个 companion 连接是独立的，阻塞不影响其他 app 的 companion 请求。
 /// 这彻底消除了 fork 模型中旧 watcher 与新 mount 之间的竞态条件。
 ///
@@ -166,15 +172,15 @@ pub fn handle_companion_cpu_spoof(
         std::process::id()
     );
 
-    let setup_ok = match do_cpu_spoof_setup(pid, &request.content) {
-        Ok(()) => true,
+    let (setup_ok, mount_child_pid) = match do_cpu_spoof_setup(pid, &request.content) {
+        Ok(child_pid) => (true, child_pid),
         Err(e) => {
             error!("CPU spoof setup failed for pid {pid}: {e}");
             let response = CompanionResponse::err(e.to_string());
             if let Err(e) = write_companion_response(stream, &response) {
                 warn!("Failed to write CPU spoof response: {e}");
             }
-            false
+            (false, -1)
         }
     };
 
@@ -184,12 +190,31 @@ pub fn handle_companion_cpu_spoof(
             warn!("Failed to write CPU spoof response: {e}");
         }
 
-        // 当前 companion 连接已服务完毕，直接阻塞等待 app 退出。
-        // 每个 companion 是独立的，阻塞不影响其他 app。
-        // 不 fork 子进程——彻底消除旧 watcher 与新 mount 之间的竞态。
+        // 阻塞等待 app 退出。
         wait_for_app_exit(pid);
-        cleanup_mount_and_source(pid);
+
+        // 通知 mount 子进程执行 umount 清理并退出。
+        signal_mount_child_cleanup(mount_child_pid, pid);
+
+        // 清理源文件
+        let internal_path = format!("{CPU_SPOOF_STATE_DIR}/cpu_{pid}");
+        if let Err(e) = fs::remove_file(&internal_path) {
+            warn!("Failed to remove cpuinfo source {internal_path}: {e}");
+        }
     }
+}
+
+/// 通知 mount 子进程执行 umount 清理：发送 SIGTERM 并等待其退出。
+fn signal_mount_child_cleanup(child_pid: i32, app_pid: u32) {
+    if child_pid <= 0 {
+        return;
+    }
+    info!("Sending SIGTERM to mount child {child_pid} for app pid {app_pid}");
+    unsafe { libc::kill(child_pid, libc::SIGTERM) };
+    // 等待子进程退出，回收僵尸进程
+    let mut status = 0i32;
+    unsafe { libc::waitpid(child_pid, &mut status, 0) };
+    info!("Mount child {child_pid} exited (app pid {app_pid})");
 }
 
 /// 使用 `pidfd_open` + `poll()` 阻塞等待目标进程退出。
@@ -247,89 +272,383 @@ fn wait_for_app_exit(pid: u32) {
     }
 }
 
-fn do_cpu_spoof_setup(pid: u32, content: &str) -> Result<()> {
+// ---------------------------------------------------------------------------
+// Fork + setns 架构
+// ---------------------------------------------------------------------------
+//
+// Companion（zygiskd）可能是多线程的（线程池模型），直接调用 setns(CLONE_NEWNS)
+// 在多线程进程中会返回 EINVAL（Linux 内核限制）。解决方案是 fork 子进程——
+// fork 后子进程是单线程的，可以安全调用 setns。
+//
+// 子进程进入 app 的 mount namespace 后**常驻等待**（不立即退出），以保持
+// namespace 引用并确保 bind mount 在 app 整个生命周期内有效。
+// Companion 线程等待 app 退出后通过 SIGTERM 通知子进程执行 umount 清理。
+// ---------------------------------------------------------------------------
+
+/// 执行 CPU 伪装的 setup：写入源文件、fork 子进程进入 app namespace 并挂载。
+/// 返回子进程 pid，调用者在 app 退出后应通知子进程清理。
+fn do_cpu_spoof_setup(pid: u32, content: &str) -> Result<i32> {
     ensure_dir(CPU_SPOOF_STATE_DIR)?;
-    // 目录必须 app 可读，否则其下新建文件的 label 继承也可能受影响。
     set_selinux_context(CPU_SPOOF_STATE_DIR);
 
     let internal_path = format!("{CPU_SPOOF_STATE_DIR}/cpu_{pid}");
     fs::write(&internal_path, content)
         .with_context(|| format!("Failed to write internal cpuinfo file {internal_path}"))?;
-    // 源文件的 label 决定 app 读 /proc/cpuinfo（bind 后解析到此 inode）的 SELinux 判定，
-    // 必须在 mount 之前设好。
     set_selinux_context(&internal_path);
 
+    // 通过 fork+pipe 将 mount 操作委派给子进程（子进程是单线程，可安全 setns）。
+    let result = fork_mount_child(pid, &internal_path);
+
+    match &result {
+        Ok(child_pid) => {
+            info!("Successfully mounted fake cpuinfo for pid {pid} (child_pid={child_pid})")
+        }
+        Err(e) => {
+            error!("Mount operation failed for pid {pid}: {e}");
+            let _ = fs::remove_file(&internal_path);
+        }
+    }
+
+    result
+}
+
+/// fork 子进程：setns 进入 app namespace → bind mount → 常驻等待。
+///
+/// 子进程通过 pipe 报告挂载结果后**不退出**，保持 namespace 引用。
+/// 父进程（companion 线程）返回子进程 pid；app 退出后发送 SIGTERM 通知清理。
+///
+/// Pipe 协议：
+/// - 成功：写 4 字节 `0i32`
+/// - 失败：写 4 字节 `-1i32` + 4 字节 msg_len + UTF-8 错误消息
+fn fork_mount_child(pid: u32, source_path: &str) -> Result<i32> {
+    let mut pipe_fds = [0i32; 2];
+    if unsafe { libc::pipe(pipe_fds.as_mut_ptr()) } != 0 {
+        anyhow::bail!("pipe failed: {}", std::io::Error::last_os_error());
+    }
+    let read_fd = pipe_fds[0];
+    let write_fd = pipe_fds[1];
+
+    match unsafe { libc::fork() } {
+        -1 => {
+            unsafe {
+                libc::close(read_fd);
+                libc::close(write_fd);
+            }
+            anyhow::bail!("fork failed: {}", std::io::Error::last_os_error());
+        }
+        0 => {
+            // === 子进程（单线程，可安全 setns）===
+            unsafe { libc::close(read_fd) };
+            let status = do_mount_in_child(pid, source_path);
+            match status {
+                Ok(()) => {
+                    let code: i32 = 0;
+                    unsafe {
+                        libc::write(
+                            write_fd,
+                            &code as *const i32 as *const libc::c_void,
+                            std::mem::size_of::<i32>(),
+                        )
+                    };
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    let code: i32 = -1;
+                    let msg_bytes = msg.as_bytes();
+                    let msg_len = msg_bytes.len() as i32;
+                    unsafe {
+                        libc::write(
+                            write_fd,
+                            &code as *const i32 as *const libc::c_void,
+                            std::mem::size_of::<i32>(),
+                        );
+                        libc::write(
+                            write_fd,
+                            &msg_len as *const i32 as *const libc::c_void,
+                            std::mem::size_of::<i32>(),
+                        );
+                        libc::write(
+                            write_fd,
+                            msg_bytes.as_ptr() as *const libc::c_void,
+                            msg_bytes.len(),
+                        );
+                        libc::close(write_fd);
+                        libc::_exit(1);
+                    }
+                }
+            }
+            // 挂载成功：关闭 pipe 写端，然后监控 namespace 变化
+            unsafe { libc::close(write_fd) };
+
+            // 注册 SIGTERM handler
+            unsafe {
+                libc::signal(
+                    libc::SIGTERM,
+                    child_sigterm_handler as *const () as libc::sighandler_t,
+                );
+            }
+
+            // 监控 namespace 变化：某些 Zygisk 实现（NeoZygisk）会在 unshare hook
+            // 后切换 app 的 namespace，此时需要在新 namespace 中重新 mount。
+            monitor_and_remount(pid, source_path);
+
+            // 不可达（monitor_and_remount 内循环，只在 SIGTERM 时通过 handler 退出）
+            unsafe { libc::_exit(0) }
+        }
+        child_pid => {
+            // === 父进程（companion 线程）===
+            unsafe { libc::close(write_fd) };
+
+            // 读取结果码
+            let mut code: i32 = -1;
+            let n = unsafe {
+                libc::read(
+                    read_fd,
+                    &mut code as *mut i32 as *mut libc::c_void,
+                    std::mem::size_of::<i32>(),
+                )
+            };
+            if n != std::mem::size_of::<i32>() as isize {
+                unsafe { libc::close(read_fd) };
+                let mut status = 0i32;
+                unsafe { libc::waitpid(child_pid, &mut status, 0) };
+                anyhow::bail!("Failed to read mount result from child (read {n} bytes)");
+            }
+
+            if code != 0 {
+                // 读取错误消息
+                let mut msg_len: i32 = 0;
+                let n = unsafe {
+                    libc::read(
+                        read_fd,
+                        &mut msg_len as *mut i32 as *mut libc::c_void,
+                        std::mem::size_of::<i32>(),
+                    )
+                };
+                let err_msg = if n == std::mem::size_of::<i32>() as isize && msg_len > 0 {
+                    let mut buf = vec![0u8; msg_len as usize];
+                    unsafe {
+                        libc::read(
+                            read_fd,
+                            buf.as_mut_ptr() as *mut libc::c_void,
+                            msg_len as usize,
+                        )
+                    };
+                    String::from_utf8_lossy(&buf).to_string()
+                } else {
+                    format!("error code {code}")
+                };
+                unsafe { libc::close(read_fd) };
+                let mut status = 0i32;
+                unsafe { libc::waitpid(child_pid, &mut status, 0) };
+                anyhow::bail!("Mount child failed: {err_msg}");
+            }
+
+            unsafe { libc::close(read_fd) };
+            // 子进程仍在运行（等待 SIGTERM），返回其 pid
+            Ok(child_pid)
+        }
+    }
+}
+
+/// 子进程的 SIGTERM handler：收到信号后 umount 并退出。
+extern "C" fn child_sigterm_handler(_sig: libc::c_int) {
+    let _ = CString::new(PROC_CPUINFO).map(|target| {
+        unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) };
+    });
+    unsafe { libc::_exit(0) };
+}
+
+/// 在 fork 子进程中执行 setns + bind mount。
+/// namespace 变化由 monitor_and_remount 处理。
+fn do_mount_in_child(pid: u32, source_path: &str) -> Result<()> {
+    let ns_path = format!("/proc/{pid}/ns/mnt");
+    let ns_path_c = CString::new(ns_path.as_str())?;
+
+    let initial_ino = read_ns_ino(pid)?;
+
+    // setns 到 app 当前的 namespace
+    let ns_fd = unsafe { libc::open(ns_path_c.as_ptr(), libc::O_RDONLY) };
+    if ns_fd < 0 {
+        anyhow::bail!(
+            "Failed to open {}: {}",
+            ns_path,
+            std::io::Error::last_os_error()
+        );
+    }
+
+    let ret = unsafe {
+        libc::syscall(
+            libc::SYS_setns,
+            ns_fd as libc::c_long,
+            libc::CLONE_NEWNS as libc::c_long,
+        )
+    };
+    if ret != 0 {
+        let err = std::io::Error::last_os_error();
+        unsafe { libc::close(ns_fd) };
+        anyhow::bail!("setns failed for pid {pid}: {err}");
+    }
+    info!("[child] Entered NS of pid {pid} (ino={initial_ino})");
+
+    // 防御性卸载
+    let target = CString::new(PROC_CPUINFO)?;
     unsafe {
-        let source = CString::new(internal_path.as_str())?;
-        let target = CString::new(PROC_CPUINFO)?;
-        let ret = libc::mount(
+        libc::umount2(target.as_ptr(), libc::MNT_DETACH);
+    }
+
+    // bind mount
+    let source = CString::new(source_path)?;
+    let ret = unsafe {
+        libc::mount(
             source.as_ptr(),
             target.as_ptr(),
             std::ptr::null(),
             MS_BIND,
             std::ptr::null(),
-        );
-
-        if ret != 0 {
-            let err = std::io::Error::last_os_error();
-            // 挂载失败时立即清理源文件，避免残留。
-            let _ = fs::remove_file(&internal_path);
-            anyhow::bail!("mount failed: {err}");
-        }
+        )
+    };
+    if ret != 0 {
+        let err = std::io::Error::last_os_error();
+        anyhow::bail!("bind mount failed: {err}");
     }
 
-    info!("Successfully mounted fake cpuinfo to {PROC_CPUINFO} for pid {pid}");
+    info!("[child] Mounted fake cpuinfo for pid {pid} (ns_ino={initial_ino})");
 
-    // 读回验证：确认 bind mount 对当前 namespace 可见，且内容正确。
+    // 验证
     match fs::read_to_string(PROC_CPUINFO) {
-        Ok(actual) if actual == content => {
-            info!("Mount verification passed for pid {pid}");
+        Ok(actual) if !actual.is_empty() => {
+            info!("[child] Verified for pid {pid} ({} bytes)", actual.len());
         }
-        Ok(actual) => {
-            warn!(
-                "Mount verification MISMATCH for pid {pid}: \
-                 expected {} bytes, got {} bytes — bind mount may not be visible",
-                content.len(),
-                actual.len()
-            );
-        }
-        Err(e) => {
-            warn!("Mount verification read failed for pid {pid}: {e}");
-        }
+        Ok(_) => warn!("[child] /proc/cpuinfo empty for pid {pid}"),
+        Err(e) => warn!("[child] Read failed for pid {pid}: {e}"),
     }
-
-    // 不在 setup 中 fork watcher：app 退出检测由 handle_companion_cpu_spoof
-    // 中的 pidfd + poll 方案完成。
 
     Ok(())
 }
 
-/// 执行 umount 和源文件清理。在 companion 检测到 app 退出后调用。
-///
-/// `umount2(MNT_DETACH)` 执行 lazy detach：立即从挂载层级移除，
-/// 已持有的 fd 仍可继续读直到关闭。如果 mount 已随 namespace 销毁消失，
-/// umount 会返回 EINVAL，视为正常。
-fn cleanup_mount_and_source(pid: u32) {
-    let internal_path = format!("{CPU_SPOOF_STATE_DIR}/cpu_{pid}");
+/// 监控 app 的 mount namespace 变化，如果 namespace 被切换（如 NeoZygisk 的
+/// unshare hook），在新 namespace 中重新执行 bind mount。
+/// 循环直到 SIGTERM 或 app 退出。
+fn monitor_and_remount(pid: u32, source_path: &str) {
+    let mut current_ino = match read_ns_ino(pid) {
+        Ok(ino) => ino,
+        Err(_) => return,
+    };
 
-    let target = match CString::new(PROC_CPUINFO) {
-        Ok(t) => t,
-        Err(e) => {
-            warn!("Failed to create CString for umount: {e}");
+    info!("[child] Monitoring NS for pid {pid} (initial ino={current_ino})");
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // 检查 app 是否还活着
+        let proc_path = format!("/proc/{pid}");
+        if !std::path::Path::new(&proc_path).exists() {
+            info!("[child] App pid {pid} exited, stopping monitor");
             return;
         }
-    };
-    let ret = unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) };
-    if ret != 0 {
-        let err = std::io::Error::last_os_error();
-        warn!("umount2 /proc/cpuinfo failed (may already be gone): {err}");
-    } else {
-        info!("umounted fake cpuinfo for pid {pid}");
-    }
 
-    if let Err(e) = fs::remove_file(&internal_path) {
-        warn!("Failed to remove cpuinfo source {internal_path}: {e}");
+        // 检查 namespace 是否变化
+        match read_ns_ino(pid) {
+            Ok(new_ino) if new_ino != current_ino => {
+                info!("[child] NS changed for pid {pid}: {current_ino} -> {new_ino}");
+
+                // 进入新 namespace
+                let ns_path = format!("/proc/{pid}/ns/mnt");
+                let Ok(ns_path_c) = CString::new(ns_path.as_str()) else {
+                    continue;
+                };
+                let ns_fd = unsafe { libc::open(ns_path_c.as_ptr(), libc::O_RDONLY) };
+                if ns_fd < 0 {
+                    warn!("[child] Cannot open new NS for pid {pid}");
+                    continue;
+                }
+
+                let ret = unsafe {
+                    libc::syscall(
+                        libc::SYS_setns,
+                        ns_fd as libc::c_long,
+                        libc::CLONE_NEWNS as libc::c_long,
+                    )
+                };
+                if ret != 0 {
+                    warn!(
+                        "[child] setns to new NS failed for pid {pid}: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    unsafe { libc::close(ns_fd) };
+                    continue;
+                }
+                // 不关闭 ns_fd，保持 namespace 引用
+
+                // 防御性卸载 + 重新 mount
+                let target = match CString::new(PROC_CPUINFO) {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) };
+
+                let source = match CString::new(source_path) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                let ret = unsafe {
+                    libc::mount(
+                        source.as_ptr(),
+                        target.as_ptr(),
+                        std::ptr::null(),
+                        MS_BIND,
+                        std::ptr::null(),
+                    )
+                };
+                if ret == 0 {
+                    info!("[child] Re-mounted in new NS for pid {pid} (ino={new_ino})");
+                } else {
+                    warn!(
+                        "[child] Re-mount failed for pid {pid}: {}",
+                        std::io::Error::last_os_error()
+                    );
+                }
+
+                current_ino = new_ino;
+            }
+            Ok(_) => {}       // namespace 没变，继续监控
+            Err(_) => return, // 无法读取 namespace
+        }
     }
+}
+
+/// 读取 /proc/{pid}/ns/mnt 的 namespace 标识（通过 readlink 获取 mnt:[inode]）。
+/// stat() 返回的是 procfs 条目的 inode（固定不变），必须用 readlink 获取真正的 namespace ID。
+fn read_ns_ino(pid: u32) -> Result<u64> {
+    let ns_path = format!("/proc/{pid}/ns/mnt");
+    let ns_path_c = CString::new(ns_path.as_str())?;
+    let mut buf = [0u8; 64];
+    let len = unsafe {
+        libc::readlink(
+            ns_path_c.as_ptr(),
+            buf.as_mut_ptr() as *mut libc::c_char,
+            buf.len() - 1,
+        )
+    };
+    if len < 0 {
+        anyhow::bail!(
+            "readlink({}) failed: {}",
+            ns_path,
+            std::io::Error::last_os_error()
+        );
+    }
+    buf[len as usize] = 0;
+    let link = std::str::from_utf8(&buf[..len as usize])
+        .map_err(|_| anyhow::anyhow!("invalid utf8 in ns link"))?;
+    // 格式: "mnt:[4026535831]"
+    let ino_str = link
+        .strip_prefix("mnt:[")
+        .and_then(|s| s.strip_suffix(']'))
+        .ok_or_else(|| anyhow::anyhow!("unexpected ns link format: {link}"))?;
+    ino_str
+        .parse::<u64>()
+        .map_err(|_| anyhow::anyhow!("cannot parse ns ino: {ino_str}"))
 }
 
 fn ensure_dir(path: &str) -> Result<()> {
