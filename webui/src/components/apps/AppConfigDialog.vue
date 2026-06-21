@@ -350,6 +350,12 @@ watch(
   },
   { immediate: true }
 )
+
+watch(selectedTemplate, (val) => {
+  if (val) {
+    hasTemplateConfig.value = true
+  }
+})
 </script>
 
 <style scoped>
