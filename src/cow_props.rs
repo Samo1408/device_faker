@@ -1,19 +1,24 @@
 //! COW 属性伪造引擎。
 //!
-//! - 已有属性：用 bionic `__system_property_find()` + COW remap + 原地 patch
-//! - 新增属性：按需启动 companion resetprop（有 restore watcher）
+//! - 已有属性：bionic `__system_property_find()` + COW remap + 原地 patch
+//! - 不存在属性：COW remap + `MmapPropArea::emplace()` 在私有副本中插入 trie 节点
+//!   （不依赖 companion resetprop，per-process 隔离零驻留）
+//!
+//! # 实现说明
+//!
+//! 不存在属性的插入通过 `MmapPropArea`（ksu_props）在 COW-remapped 内存上操作：
+//! - `transmute((ptr, len))` → `MmapMut` 构造 `MmapPropArea`（MmapMut = `{ptr, len}` on Unix）
+//! - `ManuallyDrop` 防止 `MmapPropArea` drop → `MmapMut` drop → munmap（COW 副本需保持存活）
+//! - `emplace()` 内部 bump allocator 分配 trie 节点 + prop_info，Release store 发布指针
 
 use std::{cell::RefCell, collections::HashMap};
 
-use log::{info, warn};
+use log::{debug, info, warn};
 
 // ── bionic 类型定义 ────────────────────────────────────────────────────────
 
 type FnSystemPropertyFind = unsafe extern "C" fn(*const libc::c_char) -> *const libc::c_void;
 
-// prop_info 布局（bionic short property，Android 8+ 稳定）：
-//   offset 0: u32 serial  — 高 8 位 = 值长度，低 24 位 = 生成计数器，bit 0 = dirty
-//   offset 4: u8[92] value — NUL 终止
 const PROP_VALUE_MAX: usize = 92;
 
 // ── COW 范围缓存（per-thread，避免重复 remap 同一区域）────────────────────
@@ -40,9 +45,12 @@ fn sys_prop_find() -> Option<FnSystemPropertyFind> {
 
 // ── 入口 ───────────────────────────────────────────────────────────────────
 
-/// 对目标进程的所有属性应用 COW 伪造（patch 已有）。
+/// 对目标进程的所有属性应用 COW 伪造。
 ///
-/// 返回未能通过 COW patch 的属性列表（设备上不存在），供 companion resetprop 处理。
+/// - 已有属性：COW remap + 原地 patch
+/// - 不存在属性：在对应 prop_area 的 COW 映射中插入 trie 节点 + prop_info
+///
+/// 返回仍未能处理的属性列表（映射找不到或空间不足），供 companion resetprop 兜底。
 pub fn apply_cow_spoof(
     prop_map: &HashMap<String, String>,
 ) -> anyhow::Result<Vec<(String, String)>> {
@@ -72,20 +80,33 @@ pub fn apply_cow_spoof(
     let mappings = collect_prop_area_mappings();
 
     let mut cow_patched = 0usize;
+    let mut cow_inserted = 0usize;
 
     for (key, value) in &filtered {
         match cow_patch_existing(find_fn, key, value, &mappings) {
             Ok(true) => cow_patched += 1,
             Ok(false) => {
-                // 属性不存在于 prop_area，交给 companion resetprop
-                unfound.push((key.to_string(), value.to_string()));
+                // 属性不存在 → 尝试在 COW prop_area 中插入新 trie 节点
+                match cow_patch_new(key, value, &mappings) {
+                    Ok(true) => cow_inserted += 1,
+                    Ok(false) => {
+                        unfound.push((key.to_string(), value.to_string()));
+                    }
+                    Err(e) => {
+                        warn!("COW insert failed for '{key}': {e}");
+                        unfound.push((key.to_string(), value.to_string()));
+                    }
+                }
             }
             Err(e) => warn!("COW patch failed for '{key}': {e}"),
         }
     }
 
-    if cow_patched > 0 {
-        info!("COW patched {cow_patched}/{} props", filtered.len());
+    if cow_patched > 0 || cow_inserted > 0 {
+        info!(
+            "COW spoof: {cow_patched} patched, {cow_inserted} inserted, {} total",
+            filtered.len()
+        );
     }
 
     COW_RANGES.with(|r| r.borrow_mut().clear());
@@ -275,6 +296,141 @@ fn patch_prop_info(prop_ptr: *mut u8, value: &str) {
             ((len as u32) << 24) | (((old & 0x00FF_FFFFu32).wrapping_add(2)) & 0x00FF_FFFFu32);
         serial_ptr.write_volatile(new_serial);
         std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::Release);
+    }
+}
+
+// ── 新增属性：COW trie 插入 ───────────────────────────────────────────────
+
+/// 尝试在 COW-remapped 的 prop_area 中为不存在的属性插入新 trie 节点。
+///
+/// 通过 `MmapPropArea::emplace()` 在 COW 内存上操作 trie 结构：
+/// - MAP_PRIVATE|MAP_FIXED 替换原始映射为 COW 私有副本
+/// - `transmute((ptr, len))` → `MmapMut` 构造 MmapPropArea
+/// - `emplace()` 内部 bump allocator 分配 trie 节点 + prop_info
+/// - ManuallyDrop 防止 MmapPropArea drop → MmapMut drop → munmap（COW 副本需保持存活）
+fn cow_patch_new(key: &str, value: &str, mappings: &[PropAreaMapping]) -> anyhow::Result<bool> {
+    use memmap2::MmapMut;
+    use prop_rs_android::mmap_prop_area::MmapPropArea;
+
+    let key_prefix = match key.find('.') {
+        Some(i) => &key[..i],
+        None => key,
+    };
+
+    // 第一遍：只读扫描，找到前缀匹配的 mapping（不做 COW remap）
+    let target = mappings.iter().find(|m| {
+        if !m.path.starts_with("/dev/__properties__/") {
+            return false;
+        }
+        let size = m.end - m.start;
+        if size < 128 {
+            return false;
+        }
+        let ptr = m.start as *mut u8;
+        let magic = unsafe { (ptr.add(8) as *const u32).read_unaligned() };
+        let version = unsafe { (ptr.add(12) as *const u32).read_unaligned() };
+        if magic != 0x504f_5250 || version != 0xfc6e_d0ab {
+            return false;
+        }
+        area_has_prefix(ptr, size, key_prefix)
+    });
+
+    let mapping = match target {
+        Some(m) => m,
+        None => return Ok(false),
+    };
+
+    // 第二步：只对目标 mapping 做 COW remap（最小化 rw-p 暴露）
+    ensure_prop_area_private(mapping.start as *const u8, mappings)?;
+
+    let size = mapping.end - mapping.start;
+    let ptr = mapping.start as *mut u8;
+
+    // 构造 MmapPropArea（transmute ptr+len → MmapMut，ManuallyDrop 防 munmap）
+    let mmap_mut = unsafe { std::mem::transmute::<(*mut u8, usize), MmapMut>((ptr, size)) };
+    let mut area = match MmapPropArea::new(mmap_mut) {
+        Ok(a) => std::mem::ManuallyDrop::new(a),
+        Err(_) => return Ok(false),
+    };
+
+    // 检查属性是否已存在
+    if let Ok(Some(_)) = area.find(key) {
+        debug!("COW trie: '{key}' already exists, skipping insert");
+        return Ok(false);
+    }
+
+    // 插入新属性
+    match area.emplace(key, value.as_bytes(), 0) {
+        Ok(()) => {
+            info!("COW trie: inserted '{key}' into {}", mapping.path);
+            Ok(true)
+        }
+        Err(e) => {
+            warn!("COW trie emplace failed for '{key}': {e}");
+            Ok(false)
+        }
+    }
+}
+
+/// 检查 prop_area trie 根节点的 children BST 中是否有 name == prefix 的节点。
+///
+/// 绝对地址：base + 0 = root node，root.children 在 base+16，
+/// children 指向的节点 name 在 base + children + TRIE_HEADER_SIZE。
+fn area_has_prefix(base: *mut u8, pa_size: usize, prefix: &str) -> bool {
+    const TRIE_HEADER_SIZE: usize = 20;
+    const TRIE_CHILDREN_OFF: usize = 16;
+    const TRIE_LEFT_OFF: usize = 8;
+    const TRIE_RIGHT_OFF: usize = 12;
+    const PA_HEADER_SIZE: usize = 128;
+
+    if pa_size < PA_HEADER_SIZE + TRIE_HEADER_SIZE + 4 {
+        return false;
+    }
+
+    // 根节点在 base + PA_HEADER_SIZE，children 字段在 base + PA_HEADER_SIZE + 16
+    let children =
+        unsafe { (base.add(PA_HEADER_SIZE + TRIE_CHILDREN_OFF) as *const u32).read_unaligned() };
+    if children == 0 {
+        return false;
+    }
+
+    // children 是 data offset，绝对地址 = base + PA_HEADER_SIZE + children
+    let mut current = PA_HEADER_SIZE + children as usize;
+    let pref = prefix.as_bytes();
+    let mut depth = 0u32;
+
+    loop {
+        if depth > 500 || current + TRIE_HEADER_SIZE + 4 > pa_size {
+            return false;
+        }
+
+        let namelen = unsafe { (base.add(current) as *const u32).read_unaligned() } as usize;
+        let name_start = current + TRIE_HEADER_SIZE;
+
+        if name_start + namelen > pa_size {
+            return false;
+        }
+
+        let name = unsafe { std::slice::from_raw_parts(base.add(name_start), namelen) };
+
+        if name == pref {
+            return true;
+        }
+
+        // BST 比较：先长度后字典序（与 MmapPropArea::cmp_name 一致）
+        let child_off = if pref.len() < namelen || (pref.len() == namelen && pref < name) {
+            TRIE_LEFT_OFF
+        } else {
+            TRIE_RIGHT_OFF
+        };
+
+        let child = unsafe { (base.add(current + child_off) as *const u32).read_unaligned() };
+        if child == 0 {
+            return false;
+        }
+
+        current = PA_HEADER_SIZE + child as usize;
+        depth += 1;
     }
 }
 
