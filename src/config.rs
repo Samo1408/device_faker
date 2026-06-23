@@ -394,6 +394,7 @@ impl Config {
     }
 
     /// 构建用于 companion 模式的系统属性映射
+    #[allow(dead_code)]
     pub fn build_merged_property_map_for_resetprop(
         merged: &MergedAppConfig,
     ) -> HashMap<String, String> {
@@ -425,6 +426,38 @@ pub struct MergedAppConfig {
     pub cpu_spoof_custom: Option<String>,
     /// 最终要挂载到 /proc/cpuinfo 的内容（已解析完成）
     pub cpuinfo_content: Option<String>,
+}
+
+/// 属性名 → SELinux context 硬编码映射。
+///
+/// Android 的属性按 SELinux context 分文件存储在 `/dev/__properties__/` 下。
+/// 此映射用于 COW 引擎确定每个属性所在的 prop_area 文件。
+///
+/// 后续可改为运行时 `getprop -Z` 查询缓存，以支持 OEM 非标准 context。
+#[allow(dead_code)] // Reserved for future COW engine (trie traversal via MmapPropArea)
+pub fn get_prop_context(prop_name: &str) -> &'static str {
+    match prop_name {
+        "ro.build.fingerprint" => "u:object_r:fingerprint_prop:s0",
+        "ro.build.id" | "ro.build.type" | "ro.build.tags" | "ro.build.display.id" => {
+            "u:object_r:build_prop:s0"
+        }
+        "ro.build.version.release"
+        | "ro.build.version.sdk"
+        | "ro.build.version.security_patch"
+        | "ro.build.version.incremental"
+        | "ro.build.version.codename" => "u:object_r:default_prop:s0",
+        "ro.product.model"
+        | "ro.product.brand"
+        | "ro.product.device"
+        | "ro.product.manufacturer"
+        | "ro.product.name"
+        | "ro.product.board"
+        | "ro.product.marketname" => "u:object_r:system_prop:s0",
+        "ro.serialno" | "ro.hardware" | "ro.bootloader" => "u:object_r:default_prop:s0",
+        "ro.build.characteristics" => "u:object_r:system_prop:s0",
+        "ro.product.build.id" => "u:object_r:system_prop:s0",
+        _ => "u:object_r:default_prop:s0",
+    }
 }
 
 impl MergedAppConfig {

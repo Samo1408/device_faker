@@ -2,13 +2,14 @@
 mod atexit;
 mod companion;
 mod config;
+mod cow_props;
 mod cpu_spoof;
 #[cfg(target_os = "android")]
 mod file_logger;
 mod hooks;
 mod state;
 
-use std::{fs, path::Path};
+use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::Context;
 use companion::{
@@ -145,25 +146,62 @@ impl MyModule {
             }
         }
 
-        if config.debug {
-            info!(
-                "Using mode: {} for app: {package_name} (user {user_id})",
-                merged.mode
-            );
+        // ── 降级路径：显式 mode = "full" 时使用旧 PLT hook 实现 ──────────────
+        if merged.mode == "full" {
+            return Self::apply_full_mode_legacy(api, env, &merged, config.debug);
         }
 
+        // ── 统一执行流（按需调度）──────────────────────────────────────────
+        // ① JNI 字段覆写（始终执行）
         hook_build_fields(env, &merged)?;
         if config.debug {
             info!("Build fields faked successfully");
         }
 
-        match SpoofMode::from_mode_str(&merged.mode) {
-            SpoofMode::Lite => Self::apply_lite_mode(api, config.debug),
-            SpoofMode::Full => Self::apply_full_mode(api, env, &merged, config.debug),
-            SpoofMode::Companion => {
-                Self::apply_companion_mode(api, &package_with_user, &merged, config.debug)
+        // ② COW 属性伪造（per-process，覆盖 native 读取，零模块驻留）
+        //    返回未找到的属性列表，交给 companion resetprop 处理
+        let prop_map = Config::build_merged_property_map(&merged);
+        if config.debug {
+            info!("Property map: {} entries", prop_map.len());
+        }
+        let unfound_props = match cow_props::apply_cow_spoof(&prop_map) {
+            Ok(unfound) => unfound,
+            Err(e) => {
+                error!("COW spoof failed: {e:?}");
+                Vec::new()
+            }
+        };
+
+        // ③ Companion 按需：未找到属性 + __DELETE__ 属性
+        //    companion resetprop 有 restore watcher，切后台自动恢复
+        let delete_props = Config::build_delete_props_list(&merged);
+        if !unfound_props.is_empty() || !delete_props.is_empty() {
+            let unfound_map: HashMap<String, String> = unfound_props.into_iter().collect();
+            if let Err(e) =
+                spoof_system_props_via_companion(api, &unfound_map, &delete_props, &package_name)
+            {
+                error!("Companion resetprop failed: {e:?}");
+            } else if config.debug {
+                info!(
+                    "Companion resetprop: {} new + {} delete for {package_name}",
+                    unfound_map.len(),
+                    delete_props.len()
+                );
             }
         }
+
+        // ④ Companion 按需：CPU spoof（仅 cpu_spoof 配置时）
+        if merged.cpuinfo_content.is_some() {
+            if let Err(e) = apply_cpu_spoof(api, &merged, &package_name, config.debug) {
+                error!("CPU spoof failed: {e:?}");
+            } else if config.debug {
+                info!("CPU spoof applied for {package_name}");
+            }
+        }
+
+        // ⑤ DlClose（始终执行）
+        api.set_option(ZygiskOption::DlCloseModuleLibrary);
+        Ok(())
     }
 
     fn extract_android_user_id(args: &<V4 as ZygiskRaw>::AppSpecializeArgs) -> u32 {
@@ -204,24 +242,23 @@ impl MyModule {
         Ok(result)
     }
 
-    fn apply_lite_mode(api: &mut ZygiskApi<V4>, debug: bool) -> anyhow::Result<()> {
-        FAKE_PROPS.lock().unwrap().clear();
-        IS_FULL_MODE.store(false, std::sync::atomic::Ordering::Relaxed);
-        if debug {
-            info!("Lite mode: only Build fields faked, unloading module");
-        }
-        api.set_option(ZygiskOption::DlCloseModuleLibrary);
-        Ok(())
-    }
-
-    fn apply_full_mode(
+    /// 降级路径：显式 `mode = "full"` 时使用旧 PLT hook 实现。
+    ///
+    /// 当 COW 在某设备不兼容时，用户可设置 `mode = "full"` 回退到此路径。
+    /// 保留 hooks.rs 中的 `hook_system_properties` / `hook_native_property_get`。
+    fn apply_full_mode_legacy(
         api: &mut ZygiskApi<V4>,
         env: &mut EnvUnowned,
         merged: &MergedAppConfig,
         debug: bool,
     ) -> anyhow::Result<()> {
         if debug {
-            info!("Full mode: faking SystemProperties");
+            info!("Full mode (legacy PLT hook): faking SystemProperties");
+        }
+
+        hook_build_fields(env, merged)?;
+        if debug {
+            info!("Build fields faked successfully");
         }
 
         let prop_map = Config::build_merged_property_map(merged);
@@ -239,62 +276,6 @@ impl MyModule {
         }
 
         Ok(())
-    }
-
-    fn apply_companion_mode(
-        api: &mut ZygiskApi<V4>,
-        package_name: &str,
-        merged: &MergedAppConfig,
-        debug: bool,
-    ) -> anyhow::Result<()> {
-        if debug {
-            info!("Companion mode: using companion process");
-        }
-
-        let prop_map = Config::build_merged_property_map_for_resetprop(merged);
-        let delete_props = Config::build_delete_props_list(merged);
-        spoof_system_props_via_companion(api, &prop_map, &delete_props, package_name)?;
-
-        if debug {
-            info!("Companion property spoofing completed");
-        }
-
-        if let Err(err) = apply_cpu_spoof(api, merged, package_name, debug) {
-            error!("Failed to apply CPU spoof: {err:?}");
-        } else if debug
-            && merged
-                .cpuinfo_content
-                .as_ref()
-                .is_some_and(|c| !c.is_empty())
-        {
-            info!("CPU spoof applied for {package_name}");
-        }
-
-        FAKE_PROPS.lock().unwrap().clear();
-        IS_FULL_MODE.store(false, std::sync::atomic::Ordering::Relaxed);
-        api.set_option(ZygiskOption::DlCloseModuleLibrary);
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy)]
-enum SpoofMode {
-    Lite,
-    Full,
-    Companion,
-}
-
-impl SpoofMode {
-    fn from_mode_str(value: &str) -> Self {
-        match value {
-            "lite" => Self::Lite,
-            "full" => Self::Full,
-            "companion" => Self::Companion,
-            other => {
-                error!("Mode '{other}' not fully supported, falling back to 'lite' mode");
-                Self::Lite
-            }
-        }
     }
 }
 
