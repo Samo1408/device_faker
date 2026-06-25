@@ -16,12 +16,11 @@ use companion::{
     handle_companion_request, restore_previous_resetprop_if_needed,
     spoof_system_props_via_companion,
 };
-use config::{Config, MergedAppConfig};
+use config::Config;
 use cpu_spoof::apply_cpu_spoof;
-use hooks::{hook_build_fields, hook_native_property_get, hook_system_properties};
+use hooks::hook_build_fields;
 use jni::{EnvUnowned, errors::ThrowRuntimeExAndDefault};
 use log::{LevelFilter, error, info};
-use state::{FAKE_PROPS, IS_FULL_MODE};
 use zygisk_api::{
     ZygiskModule,
     api::{V4, ZygiskApi, v4::ZygiskOption},
@@ -58,9 +57,7 @@ impl ZygiskModule for MyModule {
         _env: EnvUnowned,
         _args: &<V4 as ZygiskRaw>::AppSpecializeArgs,
     ) {
-        if !IS_FULL_MODE.load(std::sync::atomic::Ordering::Relaxed) {
-            api.set_option(ZygiskOption::DlCloseModuleLibrary);
-        }
+        api.set_option(ZygiskOption::DlCloseModuleLibrary);
     }
 
     fn pre_server_specialize(
@@ -144,11 +141,6 @@ impl MyModule {
             if config.debug {
                 info!("Force denylist unmount enabled for {package_name}");
             }
-        }
-
-        // ── 降级路径：显式 mode = "full" 时使用旧 PLT hook 实现 ──────────────
-        if merged.mode == "full" {
-            return Self::apply_full_mode_legacy(api, env, &merged, config.debug);
         }
 
         // ── 统一执行流（按需调度）──────────────────────────────────────────
@@ -266,46 +258,6 @@ impl MyModule {
             })
             .resolve::<ThrowRuntimeExAndDefault>();
         Ok(result)
-    }
-
-    /// 降级路径：显式 `mode = "full"` 时使用旧 PLT hook 实现。
-    ///
-    /// 当 COW 在某设备不兼容时，用户可设置 `mode = "full"` 回退到此路径。
-    /// 保留 hooks.rs 中的 `hook_system_properties` / `hook_native_property_get`。
-    fn apply_full_mode_legacy(
-        api: &mut ZygiskApi<V4>,
-        env: &mut EnvUnowned,
-        merged: &MergedAppConfig,
-        debug: bool,
-    ) -> anyhow::Result<()> {
-        if debug {
-            info!("Full mode (legacy PLT hook): faking SystemProperties");
-        }
-
-        hook_build_fields(env, merged)?;
-        if debug {
-            info!("Build fields faked successfully");
-        }
-
-        if !merged.hide_maps.is_empty() {
-            cow_props::unmap_prop_areas(&merged.hide_maps);
-        }
-
-        let prop_map = Config::build_merged_property_map(merged);
-        if debug {
-            info!("Property map created with {} entries", prop_map.len());
-        }
-
-        *FAKE_PROPS.lock().unwrap() = prop_map;
-        IS_FULL_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
-        hook_system_properties(api, env)?;
-        hook_native_property_get(api)?;
-
-        if debug {
-            info!("SystemProperties faked successfully, module will stay loaded");
-        }
-
-        Ok(())
     }
 }
 

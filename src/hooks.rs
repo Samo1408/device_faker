@@ -1,22 +1,11 @@
-use std::ffi::{CStr, CString};
-
 use anyhow::Context;
 use jni::{
     Env, EnvUnowned, jni_sig, jni_str,
-    objects::{JClass, JString, JValue},
+    objects::{JClass, JValue},
     strings::JNIStr,
-    sys::JNINativeMethod,
-};
-use zygisk_api::api::{V4, ZygiskApi};
-
-use crate::{
-    config::MergedAppConfig,
-    state::{FAKE_PROPS, ORIGINAL_NATIVE_GET, OriginalNativeGet},
 };
 
-static mut ORIGINAL_SYSTEM_PROPERTY_GET: Option<
-    unsafe extern "C" fn(*const libc::c_char, *mut libc::c_char) -> libc::c_int,
-> = None;
+use crate::config::MergedAppConfig;
 
 /// 根据合并配置 Hook android.os.Build 的静态字段。
 pub fn hook_build_fields(
@@ -143,128 +132,6 @@ fn set_build_int_field(
 
     env.set_static_field(build_class, field_name, jni_sig!("I"), JValue::Int(value))
         .with_context(|| "Failed to set field".to_string())?;
-
-    Ok(())
-}
-
-/// Hook SystemProperties.native_get 以截获属性查询。
-pub fn hook_system_properties(api: &mut ZygiskApi<V4>, env: &mut EnvUnowned) -> anyhow::Result<()> {
-    let mut methods = [JNINativeMethod {
-        name: c"native_get".as_ptr().cast_mut(),
-        signature: c"(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"
-            .as_ptr()
-            .cast_mut(),
-        fnPtr: native_get_hook as *mut std::ffi::c_void,
-    }];
-
-    let class_name = unsafe { JNIStr::from_ptr(c"android/os/SystemProperties".as_ptr()) };
-
-    // Use with_env to get a proper Env reference and convert to EnvUnowned
-    env.with_env(|jenv| -> Result<(), jni::errors::Error> {
-        let env_unowned = unsafe { EnvUnowned::from_raw(jenv.get_raw()) };
-        unsafe {
-            api.hook_jni_native_methods(env_unowned, class_name, &mut methods);
-        }
-        Ok(())
-    })
-    .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
-
-    let original_fn_ptr = unsafe {
-        std::mem::transmute::<*mut std::ffi::c_void, OriginalNativeGet>(methods[0].fnPtr)
-    };
-    *ORIGINAL_NATIVE_GET.lock().unwrap() = Some(original_fn_ptr);
-
-    Ok(())
-}
-
-/// 为 Hook 提供的 SystemProperties.native_get 替身实现。
-pub unsafe extern "C" fn native_get_hook(
-    env: *mut jni::sys::JNIEnv,
-    class: jni::sys::jclass,
-    key: jni::sys::jstring,
-    def: jni::sys::jstring,
-) -> jni::sys::jstring {
-    let mut env_wrapper = unsafe { EnvUnowned::from_raw(env) };
-
-    let result = env_wrapper.with_env(|jenv| -> Result<jni::sys::jstring, jni::errors::Error> {
-        let key_jstring = unsafe { JString::from_raw(jenv, key) };
-        let key_string = match key_jstring.mutf8_chars(jenv) {
-            Ok(s) => s.to_string(),
-            Err(_) => return Ok(def),
-        };
-
-        let fake_props = FAKE_PROPS.lock().unwrap();
-        if let Some(fake_value) = fake_props.get(&key_string)
-            && let Ok(new_string) = jenv.new_string(fake_value)
-        {
-            return Ok(new_string.into_raw());
-        }
-
-        let original_native_get = ORIGINAL_NATIVE_GET.lock().unwrap();
-        if let Some(orig_fn) = *original_native_get {
-            return Ok(unsafe { orig_fn(env, class, key, def) });
-        }
-
-        Ok(def)
-    });
-
-    result.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
-}
-
-unsafe extern "C" fn my_system_property_get(
-    name: *const libc::c_char,
-    value: *mut libc::c_char,
-) -> libc::c_int {
-    if name.is_null() || value.is_null() {
-        return 0;
-    }
-
-    let name_str = match unsafe { CStr::from_ptr(name).to_str() } {
-        Ok(s) => s,
-        Err(_) => return 0,
-    };
-
-    let result = {
-        let fake_props = FAKE_PROPS.lock().unwrap();
-        fake_props.get(name_str).map(|fake_value| {
-            let len = std::cmp::min(fake_value.len(), 91);
-            unsafe {
-                std::ptr::copy(fake_value.as_ptr() as *const libc::c_char, value, len);
-                value.add(len).write(b'\0');
-            }
-            len as libc::c_int
-        })
-    };
-
-    if let Some(len) = result {
-        return len;
-    }
-
-    unsafe {
-        if let Some(orig_fn) = ORIGINAL_SYSTEM_PROPERTY_GET {
-            return orig_fn(name, value);
-        }
-    }
-
-    0
-}
-
-pub fn hook_native_property_get(api: &mut ZygiskApi<V4>) -> anyhow::Result<()> {
-    let symbol = CString::new("__system_property_get").unwrap();
-    #[allow(clippy::missing_transmute_annotations)]
-    unsafe {
-        let mut original: *const () = std::ptr::null();
-        api.plt_hook_register(
-            0,
-            0,
-            symbol,
-            my_system_property_get as *const (),
-            &mut original,
-        );
-        let _ = api.plt_hook_commit();
-
-        ORIGINAL_SYSTEM_PROPERTY_GET = Some(std::mem::transmute(original));
-    }
 
     Ok(())
 }

@@ -36,15 +36,12 @@ pub struct DeviceTemplate {
     /// SDK 版本伪装（如 35, 34）
     #[serde(default)]
     pub sdk_int: Option<u32>,
-    /// 自定义属性映射表（仅 full/companion 模式支持）
+    /// 自定义属性映射表
     #[serde(default)]
     pub custom_props: Option<HashMap<String, String>>,
     /// 是否为匹配的应用强制执行 FORCE_DENYLIST_UNMOUNT（默认继承全局设置）
     #[serde(default)]
     pub force_denylist_unmount: Option<bool>,
-    /// 模板的工作模式（可选）
-    #[serde(default)]
-    pub mode: Option<String>,
     /// CPU 伪装预设名称（引用 [cpu_presets]）
     #[serde(default)]
     pub cpu_spoof: Option<String>,
@@ -90,18 +87,12 @@ pub struct AppConfig {
     /// SDK 版本伪装（如 35, 34）
     #[serde(default)]
     pub sdk_int: Option<u32>,
-    /// 自定义属性映射表（仅 full/companion 模式支持）
+    /// 自定义属性映射表
     #[serde(default)]
     pub custom_props: Option<HashMap<String, String>>,
     /// 是否为该应用强制执行 FORCE_DENYLIST_UNMOUNT（默认继承全局设置）
     #[serde(default)]
     pub force_denylist_unmount: Option<bool>,
-    /// 工作模式：
-    /// - "lite": 只修改 Build 类（轻量模式，可卸载模块）
-    /// - "full": Build + SystemProperties Hook（完整模式，不可卸载）
-    /// - "companion": Build + companion resetprop + 可选 CPU 伪装（可卸载模块）
-    #[serde(default)]
-    pub mode: Option<String>,
     /// CPU 伪装预设名称（引用 [cpu_presets]）
     #[serde(default)]
     pub cpu_spoof: Option<String>,
@@ -119,9 +110,6 @@ pub struct AppConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    /// 全局默认模式："lite", "full" 或 "companion"
-    #[serde(default = "default_mode")]
-    pub default_mode: String,
     /// 是否默认启用 FORCE_DENYLIST_UNMOUNT（避免模块挂载痕迹）
     #[serde(default)]
     pub default_force_denylist_unmount: bool,
@@ -143,10 +131,6 @@ pub struct Config {
     /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认不启用）
     #[serde(default)]
     pub default_hide_maps: Vec<String>,
-}
-
-fn default_mode() -> String {
-    "lite".to_string() // 默认使用轻量模式，增强隐蔽性
 }
 
 impl Config {
@@ -187,10 +171,6 @@ impl Config {
                 force_denylist_unmount: app
                     .force_denylist_unmount
                     .unwrap_or(self.default_force_denylist_unmount),
-                mode: app
-                    .mode
-                    .clone()
-                    .unwrap_or_else(|| self.default_mode.clone()),
                 cpu_spoof: app.cpu_spoof.clone(),
                 cpu_spoof_custom: app.cpu_spoof_custom.clone(),
                 cpuinfo_content: None,
@@ -223,10 +203,6 @@ impl Config {
                 force_denylist_unmount: template
                     .force_denylist_unmount
                     .unwrap_or(self.default_force_denylist_unmount),
-                mode: template
-                    .mode
-                    .clone()
-                    .unwrap_or_else(|| self.default_mode.clone()),
                 cpu_spoof: template.cpu_spoof.clone(),
                 cpu_spoof_custom: template.cpu_spoof_custom.clone(),
                 cpuinfo_content: None,
@@ -244,7 +220,6 @@ impl Config {
     }
 
     /// 构建合并配置的系统属性映射
-    /// 注意：仅用于 full 模式的 SystemProperties Hook 和 companion 模式
     /// 空字符串会被忽略，不会添加到映射中
     /// __DELETE__ 标记的属性会被记录到 delete_props 中
     pub fn build_merged_property_map(merged: &MergedAppConfig) -> HashMap<String, String> {
@@ -419,14 +394,6 @@ impl Config {
 
         delete_props
     }
-
-    /// 构建用于 companion 模式的系统属性映射
-    #[allow(dead_code)]
-    pub fn build_merged_property_map_for_resetprop(
-        merged: &MergedAppConfig,
-    ) -> HashMap<String, String> {
-        Self::build_merged_property_map(merged)
-    }
 }
 
 /// 合并后的应用配置（模板 + 直接配置）
@@ -446,7 +413,6 @@ pub struct MergedAppConfig {
     pub sdk_int: Option<u32>,
     pub custom_props: Option<HashMap<String, String>>,
     pub force_denylist_unmount: bool,
-    pub mode: String,
     /// CPU 伪装预设名称
     pub cpu_spoof: Option<String>,
     /// 自定义 CPU 伪装内容
@@ -457,38 +423,6 @@ pub struct MergedAppConfig {
     pub hide_maps: Vec<String>,
     /// 是否跳过 COW，所有属性走 companion resetprop（默认 false）
     pub companion_resetprop: bool,
-}
-
-/// 属性名 → SELinux context 硬编码映射。
-///
-/// Android 的属性按 SELinux context 分文件存储在 `/dev/__properties__/` 下。
-/// 此映射用于 COW 引擎确定每个属性所在的 prop_area 文件。
-///
-/// 后续可改为运行时 `getprop -Z` 查询缓存，以支持 OEM 非标准 context。
-#[allow(dead_code)] // Reserved for future COW engine (trie traversal via MmapPropArea)
-pub fn get_prop_context(prop_name: &str) -> &'static str {
-    match prop_name {
-        "ro.build.fingerprint" => "u:object_r:fingerprint_prop:s0",
-        "ro.build.id" | "ro.build.type" | "ro.build.tags" | "ro.build.display.id" => {
-            "u:object_r:build_prop:s0"
-        }
-        "ro.build.version.release"
-        | "ro.build.version.sdk"
-        | "ro.build.version.security_patch"
-        | "ro.build.version.incremental"
-        | "ro.build.version.codename" => "u:object_r:default_prop:s0",
-        "ro.product.model"
-        | "ro.product.brand"
-        | "ro.product.device"
-        | "ro.product.manufacturer"
-        | "ro.product.name"
-        | "ro.product.board"
-        | "ro.product.marketname" => "u:object_r:system_prop:s0",
-        "ro.serialno" | "ro.hardware" | "ro.bootloader" => "u:object_r:default_prop:s0",
-        "ro.build.characteristics" => "u:object_r:system_prop:s0",
-        "ro.product.build.id" => "u:object_r:system_prop:s0",
-        _ => "u:object_r:default_prop:s0",
-    }
 }
 
 impl MergedAppConfig {
@@ -506,107 +440,5 @@ impl MergedAppConfig {
             .or(config.default_cpu_spoof.as_ref())?;
 
         config.cpu_presets.get(preset_name).cloned()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Config;
-
-    #[test]
-    fn merged_config_includes_build_id_from_app_or_template() {
-        let config = Config::from_toml(
-            r#"
-[templates.pixel]
-packages = ["com.example.template"]
-build_id = "UP1A.231005.007"
-
-[[apps]]
-package = "com.example.app"
-build_id = "UKQ1.230917.001"
-"#,
-        )
-        .unwrap();
-
-        let app_merged = config.get_merged_config("com.example.app").unwrap();
-        assert_eq!(app_merged.build_id.as_deref(), Some("UKQ1.230917.001"));
-
-        let template_merged = config.get_merged_config("com.example.template").unwrap();
-        assert_eq!(template_merged.build_id.as_deref(), Some("UP1A.231005.007"));
-    }
-
-    #[test]
-    fn property_map_and_delete_list_handle_build_id() {
-        let config = Config::from_toml(
-            r#"
-[[apps]]
-package = "com.example.app"
-build_id = "UKQ1.230917.001"
-
-[[apps]]
-package = "com.example.delete"
-build_id = "__DELETE__"
-"#,
-        )
-        .unwrap();
-
-        let merged = config.get_merged_config("com.example.app").unwrap();
-        let prop_map = Config::build_merged_property_map(&merged);
-        for key in [
-            "ro.build.id",
-            "ro.system.build.id",
-            "ro.vendor.build.id",
-            "ro.product.build.id",
-        ] {
-            assert_eq!(
-                prop_map.get(key).map(String::as_str),
-                Some("UKQ1.230917.001")
-            );
-        }
-
-        let delete_merged = config.get_merged_config("com.example.delete").unwrap();
-        let delete_props = Config::build_delete_props_list(&delete_merged);
-        for key in [
-            "ro.build.id",
-            "ro.system.build.id",
-            "ro.vendor.build.id",
-            "ro.product.build.id",
-        ] {
-            assert!(delete_props.iter().any(|prop| prop == key));
-        }
-    }
-
-    #[test]
-    fn companion_resetprop_defaults_false_and_parses() {
-        let config = Config::from_toml(
-            r#"
-[[apps]]
-package = "com.example.default"
-manufacturer = "samsung"
-
-[[apps]]
-package = "com.example.explicit"
-companion_resetprop = true
-manufacturer = "samsung"
-
-[templates.tpl]
-packages = ["com.example.template"]
-companion_resetprop = true
-manufacturer = "samsung"
-"#,
-        )
-        .unwrap();
-
-        // 默认 false
-        let default = config.get_merged_config("com.example.default").unwrap();
-        assert!(!default.companion_resetprop);
-
-        // 显式 true
-        let explicit = config.get_merged_config("com.example.explicit").unwrap();
-        assert!(explicit.companion_resetprop);
-
-        // 模板继承
-        let tpl = config.get_merged_config("com.example.template").unwrap();
-        assert!(tpl.companion_resetprop);
     }
 }

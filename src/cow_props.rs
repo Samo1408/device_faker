@@ -473,16 +473,3 @@ fn area_has_prefix(base: *mut u8, pa_size: usize, prefix: &str) -> bool {
         depth += 1;
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_serial_encoding() {
-        let len: u32 = 10;
-        let old_serial: u32 = (5 << 24) | (100 << 2) | 0;
-        let new_serial =
-            ((len as u32) << 24) | (((old_serial & 0x00FF_FFFF).wrapping_add(2)) & 0x00FF_FFFF);
-        assert_eq!(new_serial >> 24, 10);
-        assert_eq!(new_serial & 1, 0);
-    }
-}
