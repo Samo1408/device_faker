@@ -54,6 +54,10 @@ pub struct DeviceTemplate {
     /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
     #[serde(default)]
     pub hide_maps: Option<Vec<String>>,
+    /// 是否跳过 COW 属性伪造，所有属性直接交给 companion resetprop 处理
+    /// true 时 getprop（独立进程）和进程内读取一致，适用于属性一致性对比检测
+    #[serde(default)]
+    pub companion_resetprop: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -107,6 +111,10 @@ pub struct AppConfig {
     /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
     #[serde(default)]
     pub hide_maps: Option<Vec<String>>,
+    /// 是否跳过 COW 属性伪造，所有属性直接交给 companion resetprop 处理
+    /// true 时 getprop（独立进程）和进程内读取一致，适用于属性一致性对比检测
+    #[serde(default)]
+    pub companion_resetprop: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -190,6 +198,7 @@ impl Config {
                     .hide_maps
                     .clone()
                     .unwrap_or_else(|| self.default_hide_maps.clone()),
+                companion_resetprop: app.companion_resetprop.unwrap_or(false),
             };
             merged.cpuinfo_content = merged.resolve_cpuinfo(self);
             return Some(merged);
@@ -225,6 +234,7 @@ impl Config {
                     .hide_maps
                     .clone()
                     .unwrap_or_else(|| self.default_hide_maps.clone()),
+                companion_resetprop: template.companion_resetprop.unwrap_or(false),
             };
             merged.cpuinfo_content = merged.resolve_cpuinfo(self);
             return Some(merged);
@@ -445,6 +455,8 @@ pub struct MergedAppConfig {
     pub cpuinfo_content: Option<String>,
     /// 要从 /proc/self/maps 中清除的属性映射模式列表
     pub hide_maps: Vec<String>,
+    /// 是否跳过 COW，所有属性走 companion resetprop（默认 false）
+    pub companion_resetprop: bool,
 }
 
 /// 属性名 → SELinux context 硬编码映射。
@@ -562,5 +574,39 @@ build_id = "__DELETE__"
         ] {
             assert!(delete_props.iter().any(|prop| prop == key));
         }
+    }
+
+    #[test]
+    fn companion_resetprop_defaults_false_and_parses() {
+        let config = Config::from_toml(
+            r#"
+[[apps]]
+package = "com.example.default"
+manufacturer = "samsung"
+
+[[apps]]
+package = "com.example.explicit"
+companion_resetprop = true
+manufacturer = "samsung"
+
+[templates.tpl]
+packages = ["com.example.template"]
+companion_resetprop = true
+manufacturer = "samsung"
+"#,
+        )
+        .unwrap();
+
+        // 默认 false
+        let default = config.get_merged_config("com.example.default").unwrap();
+        assert!(!default.companion_resetprop);
+
+        // 显式 true
+        let explicit = config.get_merged_config("com.example.explicit").unwrap();
+        assert!(explicit.companion_resetprop);
+
+        // 模板继承
+        let tpl = config.get_merged_config("com.example.template").unwrap();
+        assert!(tpl.companion_resetprop);
     }
 }

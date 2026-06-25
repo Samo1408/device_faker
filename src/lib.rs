@@ -164,34 +164,55 @@ impl MyModule {
         }
 
         // ② COW 属性伪造（per-process，覆盖 native 读取，零模块驻留）
-        //    返回未找到的属性列表，交给 companion resetprop 处理
+        //    companion_resetprop = true 时跳过 COW，全部交给 companion resetprop（全局生效）
         let prop_map = Config::build_merged_property_map(&merged);
         if config.debug {
             info!("Property map: {} entries", prop_map.len());
         }
-        let unfound_props = match cow_props::apply_cow_spoof(&prop_map) {
-            Ok(unfound) => unfound,
-            Err(e) => {
-                error!("COW spoof failed: {e:?}");
-                Vec::new()
-            }
-        };
 
-        // ③ Companion 按需：未找到属性 + __DELETE__ 属性
-        //    companion resetprop 有 restore watcher，切后台自动恢复
-        let delete_props = Config::build_delete_props_list(&merged);
-        if !unfound_props.is_empty() || !delete_props.is_empty() {
-            let unfound_map: HashMap<String, String> = unfound_props.into_iter().collect();
-            if let Err(e) =
-                spoof_system_props_via_companion(api, &unfound_map, &delete_props, &package_name)
-            {
-                error!("Companion resetprop failed: {e:?}");
-            } else if config.debug {
-                info!(
-                    "Companion resetprop: {} new + {} delete for {package_name}",
-                    unfound_map.len(),
-                    delete_props.len()
-                );
+        if merged.companion_resetprop {
+            // 全属性走 companion resetprop（getprop 和进程内读取一致）
+            let delete_props = Config::build_delete_props_list(&merged);
+            if !prop_map.is_empty() || !delete_props.is_empty() {
+                if let Err(e) =
+                    spoof_system_props_via_companion(api, &prop_map, &delete_props, &package_name)
+                {
+                    error!("Companion resetprop (full) failed: {e:?}");
+                } else if config.debug {
+                    info!(
+                        "Companion resetprop (full): {} set + {} delete for {package_name}",
+                        prop_map.len(),
+                        delete_props.len()
+                    );
+                }
+            }
+        } else {
+            // 默认路径：COW 处理，companion 只处理未找到属性和 __DELETE__
+            let unfound_props = match cow_props::apply_cow_spoof(&prop_map) {
+                Ok(unfound) => unfound,
+                Err(e) => {
+                    error!("COW spoof failed: {e:?}");
+                    Vec::new()
+                }
+            };
+
+            let delete_props = Config::build_delete_props_list(&merged);
+            if !unfound_props.is_empty() || !delete_props.is_empty() {
+                let unfound_map: HashMap<String, String> = unfound_props.into_iter().collect();
+                if let Err(e) = spoof_system_props_via_companion(
+                    api,
+                    &unfound_map,
+                    &delete_props,
+                    &package_name,
+                ) {
+                    error!("Companion resetprop failed: {e:?}");
+                } else if config.debug {
+                    info!(
+                        "Companion resetprop: {} new + {} delete for {package_name}",
+                        unfound_map.len(),
+                        delete_props.len()
+                    );
+                }
             }
         }
 
