@@ -1,16 +1,6 @@
-import type {
-  AppConfig,
-  Config,
-  CustomProps,
-  DeviceInfo,
-  SpoofMode,
-  Template,
-  TemplateMeta,
-} from '../types'
+import type { AppConfig, Config, CustomProps, DeviceInfo, Template, TemplateMeta } from '../types'
 
 type UnknownRecord = Record<string, unknown>
-
-const VALID_MODES: SpoofMode[] = ['lite', 'full', 'companion']
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -34,12 +24,6 @@ function asOptionalInteger(value: unknown): number | undefined {
   }
 
   return value
-}
-
-function asOptionalMode(value: unknown): SpoofMode | undefined {
-  return typeof value === 'string' && VALID_MODES.includes(value as SpoofMode)
-    ? (value as SpoofMode)
-    : undefined
 }
 
 function normalizePackages(value: unknown): string[] | undefined {
@@ -118,6 +102,11 @@ function normalizeDeviceInfoFields(source: UnknownRecord): Partial<DeviceInfo> {
     normalized.force_denylist_unmount = forceDenylistUnmount
   }
 
+  const companionResetprop = asOptionalBoolean(source.companion_resetprop)
+  if (companionResetprop !== undefined) {
+    normalized.companion_resetprop = companionResetprop
+  }
+
   const cpuSpoof = asOptionalString(source.cpu_spoof)
   if (cpuSpoof !== undefined) normalized.cpu_spoof = cpuSpoof
 
@@ -136,11 +125,6 @@ export function sanitizeTemplate(input: unknown): Template {
   const packages = normalizePackages(source.packages)
   if (packages !== undefined) {
     normalized.packages = packages
-  }
-
-  const mode = asOptionalMode(source.mode)
-  if (mode !== undefined) {
-    normalized.mode = mode
   }
 
   const meta = extractTemplateMeta(source)
@@ -164,20 +148,11 @@ export function sanitizeAppConfig(input: unknown): AppConfig | null {
     ...normalizeDeviceInfoFields(source),
   }
 
-  const mode = asOptionalMode(source.mode)
-  if (mode !== undefined) {
-    normalized.mode = mode
-  }
-
   return normalized
 }
 
 export function sanitizeConfigForSave(input: Config): Config {
   const normalized: Config = {}
-
-  if (input.default_mode && input.default_mode !== 'lite') {
-    normalized.default_mode = input.default_mode
-  }
 
   if (input.default_force_denylist_unmount === true) {
     normalized.default_force_denylist_unmount = true
@@ -229,13 +204,12 @@ export function sanitizeConfigForSave(input: Config): Config {
   }
 
   if (
-    !normalized.default_mode &&
     !normalized.default_force_denylist_unmount &&
     !normalized.debug &&
     !normalized.templates &&
     !normalized.apps
   ) {
-    normalized.default_mode = 'lite'
+    normalized.default_force_denylist_unmount = false
   }
 
   return normalized

@@ -65,26 +65,7 @@
     </el-collapse-item>
   </el-collapse>
 
-  <el-form-item :label="t('templates.fields.mode')">
-    <el-select
-      v-model="formData.mode"
-      :placeholder="t('templates.placeholders.mode')"
-      clearable
-      popper-class="mode-select-popper"
-      style="width: 100%"
-    >
-      <el-option :label="t('templates.options.mode_lite')" value="lite" />
-      <el-option :label="t('templates.options.mode_full')" value="full" />
-      <el-option :label="t('templates.options.mode_companion')" value="companion" />
-    </el-select>
-  </el-form-item>
-
-  <el-form-item
-    v-if="
-      formData.mode === 'full' || (!formData.mode && configStore.config.default_mode === 'full')
-    "
-    :label="t('templates.fields.characteristics')"
-  >
+  <el-form-item :label="t('templates.fields.characteristics')">
     <el-input
       v-model="formData.characteristics"
       :placeholder="t('templates.placeholders.characteristics')"
@@ -103,13 +84,19 @@
     </el-select>
   </el-form-item>
 
-  <el-form-item
-    v-if="
-      formData.mode === 'companion' ||
-      (!formData.mode && configStore.config.default_mode === 'companion')
-    "
-    :label="t('templates.fields.cpu_spoof')"
-  >
+  <el-form-item :label="t('templates.fields.companion_resetprop')">
+    <el-select
+      v-model="formData.companion_resetprop"
+      :placeholder="t('common.default') + ' (' + t('common.disabled') + ')'"
+      clearable
+      style="width: 100%"
+    >
+      <el-option :label="t('common.enabled')" :value="true" />
+      <el-option :label="t('common.disabled')" :value="false" />
+    </el-select>
+  </el-form-item>
+
+  <el-form-item :label="t('templates.fields.cpu_spoof')">
     <el-select
       v-model="formData.cpu_spoof"
       :placeholder="t('templates.placeholders.cpu_spoof')"
@@ -120,13 +107,7 @@
     </el-select>
   </el-form-item>
 
-  <el-form-item
-    v-if="
-      formData.mode === 'companion' ||
-      (!formData.mode && configStore.config.default_mode === 'companion')
-    "
-    :label="t('templates.fields.cpu_spoof_custom')"
-  >
+  <el-form-item :label="t('templates.fields.cpu_spoof_custom')">
     <el-input
       v-model="formData.cpu_spoof_custom"
       type="textarea"
@@ -155,18 +136,3 @@ const availableCpuPresets = computed(() => {
   return Object.keys(presets)
 })
 </script>
-
-<style>
-.mode-select-popper .el-select-dropdown__item {
-  white-space: pre-line;
-  line-height: 1.4;
-  height: auto;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  word-break: break-word;
-}
-
-.mode-select-popper .el-select-dropdown__item span {
-  white-space: pre-line;
-}
-</style>

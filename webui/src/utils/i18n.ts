@@ -38,7 +38,6 @@ export const messages = {
         module_version: '模块版本',
         impersonated_apps_count: '伪装应用数量',
         templates_count: '机型模板数量',
-        work_mode: '工作模式',
       },
       // i generated these fields with AI, if it's not right please update :)
       translators: {
@@ -61,11 +60,6 @@ export const messages = {
         repository_action_primary: '前往GitHub',
         repository_action_secondary: '给项目点个 Star',
       },
-      mode: {
-        lite: '轻量模式',
-        full: '完整模式',
-        companion: 'Companion 模式',
-      },
     },
     templates: {
       title: '机型模板',
@@ -83,19 +77,19 @@ export const messages = {
         model: 'Model',
         device: 'Device',
         product: 'Product',
-        name_field: 'Name (可选，仅 full/companion 模式)',
-        market_name: 'Market Name (可选，仅 full/companion 模式)',
+        name_field: 'Name',
+        market_name: 'Market Name',
         fingerprint: 'Fingerprint',
         build_id: 'Build ID',
         android_version: 'Android 版本',
         sdk_int: 'SDK 版本',
-        characteristics: 'Characteristics (可选，仅 full/companion 模式)',
+        characteristics: 'Characteristics',
         force_denylist_unmount: '强制卸载挂载点',
-        mode: '工作模式 (可选)',
         packages: '应用包名列表 (可选)',
         system: '系统',
         cpu_spoof: 'CPU 伪装预设',
         cpu_spoof_custom: '自定义 CPU 信息',
+        companion_resetprop: 'Companion Resetprop',
       },
       placeholders: {
         name: '例如：redmagic_9_pro',
@@ -111,16 +105,10 @@ export const messages = {
         build_id: '例如：UKQ1.230917.001',
         android_version: '例如：16, 15, 14',
         sdk_int: '例如：36, 35, 34',
-        characteristics: '例如：tablet (仅 full/companion 模式)',
-        mode: '留空使用全局默认模式',
+        characteristics: '例如：tablet',
         packages: '输入或搜索应用包名',
-        cpu_spoof: '选择 config.toml 中的 CPU 预设（companion 模式生效）',
+        cpu_spoof: '选择 config.toml 中的 CPU 预设',
         cpu_spoof_custom: '留空则使用上方预设；填写后将完全自定义 /proc/cpuinfo 内容',
-      },
-      options: {
-        mode_lite: 'lite - 轻量模式（推荐，隐蔽性好）',
-        mode_full: 'full - 完整模式（全面伪装，可能被检测）',
-        mode_companion: 'companion - Companion 模式（属性 + CPU 伪装）',
       },
       empty: {
         title: '暂无机型模板',
@@ -145,18 +133,12 @@ export const messages = {
         pkg_exists: '该包名已添加',
       },
       labels: {
-        mode: '模式',
         packages: '应用包名',
         count_suffix: '个',
         version: '版本',
         version_code: '版本号',
         author: '作者',
         description: '描述',
-      },
-      values: {
-        lite: 'lite (轻量)',
-        full: 'full (完整)',
-        companion: 'companion (Companion)',
       },
       search: {
         placeholder: '搜索模板名称、品牌或型号',
@@ -352,13 +334,6 @@ export const messages = {
       },
       module: {
         title: '模块设置',
-        default_mode: {
-          label: '默认工作模式',
-          desc: '选择模块的默认工作模式',
-          lite: '轻量模式 (推荐)',
-          full: '完整模式',
-          companion: 'Companion 模式',
-        },
         force_denylist_unmount: {
           label: '默认强制卸载挂载点',
           desc: '为目标应用启用 Zygisk 的 FORCE_DENYLIST_UNMOUNT',
@@ -386,7 +361,6 @@ export const messages = {
         },
       },
       messages: {
-        default_mode_updated: '默认模式已更新',
         debug_enabled: '调试模式已启用',
         debug_disabled: '调试模式已关闭',
         read_failed: '读取文件失败或文件为空',
@@ -433,7 +407,6 @@ export const messages = {
         module_version: 'Module Version',
         impersonated_apps_count: 'Impersonated Apps',
         templates_count: 'Templates Count',
-        work_mode: 'Work Mode',
       },
       translators: {
         title: 'Translators',
@@ -455,11 +428,6 @@ export const messages = {
         repository_action_primary: 'Open GitHub',
         repository_action_secondary: 'Star the Project',
       },
-      mode: {
-        lite: 'Lite Mode',
-        full: 'Full Mode',
-        companion: 'Companion Mode',
-      },
     },
     templates: {
       title: 'Device Templates',
@@ -477,19 +445,19 @@ export const messages = {
         model: 'Model',
         device: 'Device',
         product: 'Product',
-        name_field: 'Name (Optional, full/companion modes only)',
-        market_name: 'Market Name (Optional, full/companion modes only)',
+        name_field: 'Name',
+        market_name: 'Market Name',
         fingerprint: 'Fingerprint',
         build_id: 'Build ID',
         android_version: 'Android Version',
         sdk_int: 'SDK Version',
-        characteristics: 'Characteristics (Optional, full/companion modes only)',
+        characteristics: 'Characteristics',
         force_denylist_unmount: 'Force Denylist Unmount',
-        mode: 'Work Mode (Optional)',
         packages: 'Packages (Optional)',
         system: 'System',
         cpu_spoof: 'CPU Spoof Preset',
         cpu_spoof_custom: 'Custom CPU Info',
+        companion_resetprop: 'Companion Resetprop',
       },
       placeholders: {
         name: 'e.g. redmagic_9_pro',
@@ -505,17 +473,11 @@ export const messages = {
         build_id: 'e.g. UKQ1.230917.001',
         android_version: 'e.g. 16, 15, 14',
         sdk_int: 'e.g. 36, 35, 34',
-        characteristics: 'e.g. tablet (full/companion modes only)',
-        mode: 'Leave empty to use global default',
+        characteristics: 'e.g. tablet',
         packages: 'Enter or search package name',
-        cpu_spoof: 'Select a CPU preset from config.toml (companion mode)',
+        cpu_spoof: 'Select a CPU preset from config.toml',
         cpu_spoof_custom:
           'Leave empty to use the preset above; fill in to fully customize /proc/cpuinfo',
-      },
-      options: {
-        mode_lite: 'lite - Lite Mode\n(Recommended, Stealthy)',
-        mode_full: 'full - Full Mode\n(Complete Spoofing, Detectable)',
-        mode_companion: 'companion - Companion Mode\n(Properties + CPU spoof)',
       },
       empty: {
         title: 'No Templates Found',
@@ -540,18 +502,12 @@ export const messages = {
         pkg_exists: 'Package already added',
       },
       labels: {
-        mode: 'Mode',
         packages: 'Packages',
         count_suffix: 'items',
         version: 'Version',
         version_code: 'Version Code',
         author: 'Author',
         description: 'Description',
-      },
-      values: {
-        lite: 'lite (Lite)',
-        full: 'full (Full)',
-        companion: 'companion (Companion)',
       },
       search: {
         placeholder: 'Search by name, brand, or model',
@@ -749,13 +705,6 @@ export const messages = {
       },
       module: {
         title: 'Module Settings',
-        default_mode: {
-          label: 'Default Work Mode',
-          desc: 'Choose default work mode for module',
-          lite: 'Lite Mode (Recommended)',
-          full: 'Full Mode',
-          companion: 'Companion Mode',
-        },
         force_denylist_unmount: {
           label: 'Default Force Denylist Unmount',
           desc: 'Enable Zygisk FORCE_DENYLIST_UNMOUNT for target apps',
@@ -783,7 +732,6 @@ export const messages = {
         },
       },
       messages: {
-        default_mode_updated: 'Default mode updated',
         debug_enabled: 'Debug mode enabled',
         debug_disabled: 'Debug mode disabled',
         read_failed: 'Failed to read file or file is empty',
@@ -830,7 +778,6 @@ export const messages = {
         module_version: 'Modül Sürümü',
         impersonated_apps_count: 'Taklit Edilen Uygulamalar',
         templates_count: 'Şablon Sayısı',
-        work_mode: 'Çalışma Modu',
       },
       translators: {
         title: 'Çevirmenler',
@@ -852,11 +799,6 @@ export const messages = {
         repository_action_primary: "GitHub'u Aç",
         repository_action_secondary: 'Projeye Yıldız Ver',
       },
-      mode: {
-        lite: 'Basit Mod',
-        full: 'Tam Mod',
-        companion: 'Companion Modu',
-      },
     },
     templates: {
       title: 'Cihaz Şablonları',
@@ -874,19 +816,19 @@ export const messages = {
         model: 'Model',
         device: 'Cihaz (Device)',
         product: 'Ürün (Product)',
-        name_field: 'İsim (Opsiyonel, sadece tam/companion mod)',
-        market_name: 'Market İsmi (Opsiyonel, sadece tam/companion mod)',
+        name_field: 'İsim',
+        market_name: 'Market İsmi',
         fingerprint: 'Parmak İzi (Fingerprint)',
         build_id: 'Yapı Kimiliği (Build ID)',
         android_version: 'Android Sürümü',
         sdk_int: 'SDK Sürümü',
-        characteristics: 'Özellikler (Opsiyonel, sadece tam/companion mod)',
+        characteristics: 'Özellikler',
         force_denylist_unmount: 'Denylist Bağlantısını Kaldırmaya Zorla',
-        mode: 'Çalışma Modu (Opsiyonel)',
         packages: 'Paketler (Opsiyonel)',
         system: 'Sistem',
         cpu_spoof: 'CPU Sahtekarlık Preseti',
         cpu_spoof_custom: 'Özel CPU Bilgisi',
+        companion_resetprop: 'Companion Resetprop',
       },
       placeholders: {
         name: 'redmagic_9_pro vs.',
@@ -901,17 +843,11 @@ export const messages = {
         build_id: 'UKQ1.230917.001 vs.',
         android_version: '16, 15, 14 vs.',
         sdk_int: '36, 35, 34 vs.',
-        characteristics: 'tablet vs. (sadece tam/companion mod)',
-        mode: 'Küresel varsayılanı kullanmak için boş bırakın',
+        characteristics: 'tablet vs.',
         packages: 'Paket adını girin veya arayın',
-        cpu_spoof: 'config.toml dosyasından bir CPU preset seçin (companion modu)',
+        cpu_spoof: 'config.toml dosyasından bir CPU preset seçin',
         cpu_spoof_custom:
           'Yukarıdaki preset kullanmak için boş bırakın; /proc/cpuinfo içeriğini tamamen özelleştirmek için doldurun',
-      },
-      options: {
-        mode_lite: 'lite - Basit Mod\n(Önerilen, Sağlıklı)',
-        mode_full: 'full - Tam Mod\n(Tam Kimlik Sahtekarlığı, Tespit Edilemez)',
-        mode_companion: 'companion - Companion Modu\n(Özellikler + CPU taklidi)',
       },
       empty: {
         title: 'Hiç Şablon Bulunamadı',
@@ -937,18 +873,12 @@ export const messages = {
         pkg_exists: 'Paket zaten eklendi',
       },
       labels: {
-        mode: 'Mod',
         packages: 'Paketler',
         count_suffix: 'Öğeler',
         version: 'Sürüm',
         version_code: 'Sürüm Kodu',
         author: 'Sahip',
         description: 'Açıklama',
-      },
-      values: {
-        lite: 'lite (Sade)',
-        full: 'full (Tam)',
-        companion: 'companion (Companion)',
       },
       search: {
         placeholder: 'İsme, markaya veya modele göre arayın',
@@ -1153,13 +1083,6 @@ export const messages = {
       },
       module: {
         title: 'Modül Ayarları',
-        default_mode: {
-          label: 'Varsayılan Çalışma Modu',
-          desc: 'Modül için varsayılan çalışma modunu seçin.',
-          lite: 'Basit Mod (Önerilir)',
-          full: 'Tam Mod',
-          companion: 'Companion Modu',
-        },
         force_denylist_unmount: {
           label: 'Varsayılan Denylist Listesinden Çıkarma',
           desc: 'Hedef uygulamalar için Zygisk FORCE_DENYLIST_UNMOUNT özelliğini etkinleştirin.',
@@ -1187,7 +1110,6 @@ export const messages = {
         },
       },
       messages: {
-        default_mode_updated: 'Varsayılan mod güncellendi',
         debug_enabled: 'Hata ayıklama modu etkinleştirildi',
         debug_disabled: 'Hata ayıklama modu kapatıldı',
         read_failed: 'Dosya okunamadı veya dosya boş',

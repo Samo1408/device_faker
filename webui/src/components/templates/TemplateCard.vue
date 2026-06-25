@@ -49,18 +49,6 @@
         <span class="detail-label">{{ t('templates.fields.model') }}:</span>
         <span class="detail-value">{{ template.model }}</span>
       </div>
-      <div v-if="template.mode" class="detail-item">
-        <span class="detail-label">{{ t('templates.labels.mode') }}:</span>
-        <span class="detail-value">
-          {{
-            template.mode === 'lite'
-              ? t('templates.values.lite')
-              : template.mode === 'full'
-                ? t('templates.values.full')
-                : t('templates.values.companion')
-          }}
-        </span>
-      </div>
       <div v-if="template.build_id" class="detail-item">
         <span class="detail-label">{{ t('templates.fields.build_id') }}:</span>
         <span class="detail-value">{{ template.build_id }}</span>
@@ -74,6 +62,10 @@
         <span class="detail-value">
           {{ template.force_denylist_unmount ? t('common.enabled') : t('common.disabled') }}
         </span>
+      </div>
+      <div v-if="template.companion_resetprop" class="detail-item">
+        <span class="detail-label">{{ t('templates.fields.companion_resetprop') }}:</span>
+        <span class="detail-value">{{ t('common.enabled') }}</span>
       </div>
       <div v-if="template.packages && template.packages.length > 0" class="detail-item">
         <span class="detail-label">{{ t('templates.labels.packages') }}:</span>

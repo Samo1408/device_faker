@@ -64,23 +64,6 @@
       <div class="setting-item">
         <div class="setting-info">
           <div class="setting-icon">
-            <Settings :size="24" />
-          </div>
-          <div class="setting-text">
-            <h3 class="setting-name">{{ t('settings.module.default_mode.label') }}</h3>
-            <p class="setting-desc">{{ t('settings.module.default_mode.desc') }}</p>
-          </div>
-        </div>
-        <el-select v-model="defaultMode" class="setting-control" @change="onModeChange">
-          <el-option :label="t('settings.module.default_mode.lite')" value="lite" />
-          <el-option :label="t('settings.module.default_mode.full')" value="full" />
-          <el-option :label="t('settings.module.default_mode.companion')" value="companion" />
-        </el-select>
-      </div>
-
-      <div class="setting-item">
-        <div class="setting-info">
-          <div class="setting-icon">
             <Shield :size="24" />
           </div>
           <div class="setting-text">
@@ -159,13 +142,13 @@
 
 <script setup lang="ts">
 import { ref, watch, onActivated } from 'vue'
-import { Moon, Globe, Settings, Bug, FileUp, Shield } from 'lucide-vue-next'
+import { Moon, Globe, Bug, FileUp, Shield } from 'lucide-vue-next'
 import { useConfigStore } from '../stores/config'
 import { useSettingsStore } from '../stores/settings'
 import { execCommand, readFile } from '../utils/ksu'
 import { useI18n } from '../utils/i18n'
 import { toast } from 'kernelsu-alt'
-import type { SpoofMode, Template } from '../types'
+import type { Template } from '../types'
 import {
   convertZipOnDevice,
   createDeviceTempPath,
@@ -180,7 +163,6 @@ const { t } = useI18n()
 
 const currentTheme = ref(settingsStore.theme)
 const currentLanguage = ref(settingsStore.language)
-const defaultMode = ref(configStore.config.default_mode || 'lite')
 const defaultForceDenylistUnmount = ref(configStore.config.default_force_denylist_unmount || false)
 const debugMode = ref(configStore.config.debug || false)
 
@@ -196,16 +178,6 @@ function onThemeChange(value: string) {
 
 function onLanguageChange(value: string) {
   settingsStore.setLanguage(value as 'system' | 'zh' | 'en' | 'tr')
-}
-
-async function onModeChange(value: string) {
-  configStore.config.default_mode = value as SpoofMode
-  try {
-    await configStore.saveConfig()
-    toast(t('settings.messages.default_mode_updated'))
-  } catch {
-    toast(t('settings.messages.save_failed'))
-  }
 }
 
 async function onForceDenylistUnmountChange(value: boolean) {
@@ -313,15 +285,6 @@ async function saveConvertedTemplate() {
 
 // 监听配置变化（只创建一次监听器）
 watch(
-  () => configStore.config.default_mode,
-  (newMode: SpoofMode | undefined) => {
-    if (newMode && defaultMode.value !== newMode) {
-      defaultMode.value = newMode
-    }
-  }
-)
-
-watch(
   () => configStore.config.default_force_denylist_unmount,
   (newValue: boolean | undefined) => {
     const val = newValue || false
@@ -345,7 +308,6 @@ watch(
 onActivated(() => {
   currentTheme.value = settingsStore.theme
   currentLanguage.value = settingsStore.language
-  defaultMode.value = configStore.config.default_mode || 'lite'
   defaultForceDenylistUnmount.value = configStore.config.default_force_denylist_unmount || false
   debugMode.value = configStore.config.debug || false
 })

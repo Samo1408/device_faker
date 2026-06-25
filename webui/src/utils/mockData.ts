@@ -1,7 +1,6 @@
 // 开发环境的模拟数据
 export const mockConfig = `
 # 机型伪装配置文件
-default_mode = "lite"
 
 [templates.redmagic_9_pro]
 packages = [

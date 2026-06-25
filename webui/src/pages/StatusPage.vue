@@ -92,34 +92,6 @@
           </div>
         </div>
 
-        <div
-          :class="['status-item', { clickable: canToggleWorkMode, disabled: !canToggleWorkMode }]"
-          @click="handleToggleWorkMode"
-        >
-          <div class="status-icon gradient-icon-4">
-            <Settings :size="32" />
-          </div>
-          <div class="status-info">
-            <span class="status-label">{{ t('status.items.work_mode') }}</span>
-            <span class="status-transition-slot">
-              <Transition name="status-swap">
-                <span
-                  v-if="configReady"
-                  key="work-mode"
-                  class="status-value status-value--resolved"
-                >
-                  {{ workMode }}
-                </span>
-                <span
-                  v-else
-                  key="work-mode-skeleton"
-                  class="status-value-skeleton status-value-skeleton--medium"
-                ></span>
-              </Transition>
-            </span>
-          </div>
-        </div>
-
         <div class="status-item clickable" @click="followDialogVisible = true">
           <div class="status-icon gradient-icon-5">
             <HeartHandshake :size="32" />
@@ -333,7 +305,6 @@ import {
   Shield,
   Smartphone,
   FileText,
-  Settings,
   Languages,
   HeartHandshake,
   MessageCircleMore,
@@ -420,7 +391,6 @@ const moduleVersion = computed(() => configStore.moduleVersion)
 const moduleAuthor = computed(() => configStore.moduleAuthor)
 const configReady = computed(() => configStore.configReady)
 const moduleMetaReady = computed(() => configStore.moduleMetaReady)
-const canToggleWorkMode = computed(() => configReady.value)
 const moduleVersionDisplay = computed(() =>
   moduleMetaReady.value ? moduleVersionMain.value : '--'
 )
@@ -444,25 +414,6 @@ const deviceFakerCountDisplay = computed(() =>
 const templateCountDisplay = computed(() =>
   configReady.value ? String(configStore.templateCount) : '--'
 )
-const workMode = computed(() => {
-  if (!configReady.value) {
-    return '--'
-  }
-
-  const mode = configStore.config.default_mode || 'lite'
-  if (mode === 'lite') return t('status.mode.lite')
-  if (mode === 'full') return t('status.mode.full')
-  return t('status.mode.companion')
-})
-
-async function handleToggleWorkMode() {
-  if (!configReady.value) {
-    return
-  }
-
-  await configStore.toggleWorkMode()
-}
-
 // KeepAlive 激活时的钩子
 onActivated(() => {
   // 页面激活

@@ -195,20 +195,6 @@ body {
   z-index: 100 !important;
 }
 
-/* Work mode dropdown options: allow two-line text */
-.mode-select-popper .el-select-dropdown__item {
-  white-space: pre-line;
-  line-height: 1.4;
-  height: auto;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  word-break: break-word;
-}
-
-.mode-select-popper .el-select-dropdown__item span {
-  white-space: pre-line;
-}
-
 .bottom-nav .nav-item {
   pointer-events: auto !important;
 }

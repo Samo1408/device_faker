@@ -1,5 +1,5 @@
 import { inject, provide, ref, type InjectionKey, type Ref } from 'vue'
-import type { Template, AppConfig, SpoofMode } from '../types'
+import type { Template, AppConfig } from '../types'
 
 export const DEVICE_FAKER_FORM_KEY: InjectionKey<Ref<DeviceFakerFormData>> =
   Symbol('deviceFakerForm')
@@ -18,7 +18,7 @@ export interface DeviceFakerFormData {
   sdk_int: string
   characteristics: string
   force_denylist_unmount: boolean | undefined
-  mode: SpoofMode | ''
+  companion_resetprop: boolean | undefined
   packages: string[]
   cpu_spoof: string
   cpu_spoof_custom: string
@@ -39,7 +39,7 @@ function createEmptyFormData(): DeviceFakerFormData {
     sdk_int: '',
     characteristics: '',
     force_denylist_unmount: undefined,
-    mode: '',
+    companion_resetprop: undefined,
     packages: [],
     cpu_spoof: '',
     cpu_spoof_custom: '',
@@ -102,10 +102,8 @@ export function formDataToTemplate(formData: DeviceFakerFormData, base?: Templat
     template.force_denylist_unmount = formData.force_denylist_unmount
   }
 
-  if (formData.mode) {
-    template.mode = formData.mode
-  } else {
-    delete template.mode
+  if (formData.companion_resetprop !== undefined) {
+    template.companion_resetprop = formData.companion_resetprop
   }
 
   if (formData.packages.length > 0) {
@@ -144,7 +142,7 @@ export function templateToFormData(template: Template): DeviceFakerFormData {
     sdk_int: template.sdk_int ? String(template.sdk_int) : '',
     characteristics: template.characteristics || '',
     force_denylist_unmount: template.force_denylist_unmount,
-    mode: template.mode || '',
+    companion_resetprop: template.companion_resetprop,
     packages: template.packages || [],
     cpu_spoof: template.cpu_spoof || '',
     cpu_spoof_custom: template.cpu_spoof_custom || '',
@@ -166,7 +164,7 @@ export function appConfigToFormData(appConfig: AppConfig): DeviceFakerFormData {
     sdk_int: appConfig.sdk_int ? String(appConfig.sdk_int) : '',
     characteristics: appConfig.characteristics || '',
     force_denylist_unmount: appConfig.force_denylist_unmount,
-    mode: appConfig.mode || '',
+    companion_resetprop: appConfig.companion_resetprop,
     packages: [],
     cpu_spoof: appConfig.cpu_spoof || '',
     cpu_spoof_custom: appConfig.cpu_spoof_custom || '',
@@ -189,7 +187,7 @@ export function formDataToAppConfig(formData: DeviceFakerFormData, packageName: 
     sdk_int: formData.sdk_int ? Number(formData.sdk_int) : undefined,
     characteristics: formData.characteristics,
     force_denylist_unmount: formData.force_denylist_unmount,
-    mode: formData.mode || undefined,
+    companion_resetprop: formData.companion_resetprop || undefined,
     cpu_spoof: formData.cpu_spoof || undefined,
     cpu_spoof_custom: formData.cpu_spoof_custom || undefined,
   }

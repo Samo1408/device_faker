@@ -68,9 +68,7 @@ export const useConfigStore = defineStore('config', () => {
       if (!exists && (!content || content.trim().length === 0)) {
         // 创建默认配置
         await mkdir('/data/adb/device_faker/config')
-        config.value = {
-          default_mode: 'lite',
-        }
+        config.value = {}
         rebuildTemplateOrder()
         await saveConfig()
         return
@@ -416,13 +414,6 @@ export const useConfigStore = defineStore('config', () => {
     return null
   }
 
-  // 切换工作模式
-  async function toggleWorkMode() {
-    const currentMode = config.value.default_mode || 'lite'
-    config.value.default_mode = currentMode === 'lite' ? 'full' : 'lite'
-    await saveConfig()
-  }
-
   return {
     config,
     moduleVersion,
@@ -453,6 +444,5 @@ export const useConfigStore = defineStore('config', () => {
     getDeviceFakerCount,
     isPackageConfigured,
     getPackageConfig,
-    toggleWorkMode,
   }
 })
