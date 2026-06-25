@@ -158,6 +158,11 @@ impl MyModule {
             info!("Build fields faked successfully");
         }
 
+        // ①-bis 清除 /proc/self/maps 中匹配模式的属性映射（anti-detection）
+        if !merged.hide_maps.is_empty() {
+            cow_props::unmap_prop_areas(&merged.hide_maps);
+        }
+
         // ② COW 属性伪造（per-process，覆盖 native 读取，零模块驻留）
         //    返回未找到的属性列表，交给 companion resetprop 处理
         let prop_map = Config::build_merged_property_map(&merged);
@@ -259,6 +264,10 @@ impl MyModule {
         hook_build_fields(env, merged)?;
         if debug {
             info!("Build fields faked successfully");
+        }
+
+        if !merged.hide_maps.is_empty() {
+            cow_props::unmap_prop_areas(&merged.hide_maps);
         }
 
         let prop_map = Config::build_merged_property_map(merged);

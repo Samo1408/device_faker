@@ -51,6 +51,9 @@ pub struct DeviceTemplate {
     /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
     #[serde(default)]
     pub cpu_spoof_custom: Option<String>,
+    /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
+    #[serde(default)]
+    pub hide_maps: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -101,6 +104,9 @@ pub struct AppConfig {
     /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
     #[serde(default)]
     pub cpu_spoof_custom: Option<String>,
+    /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
+    #[serde(default)]
+    pub hide_maps: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -126,6 +132,9 @@ pub struct Config {
     /// CPU 伪装预设表
     #[serde(default)]
     pub cpu_presets: HashMap<String, String>,
+    /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认不启用）
+    #[serde(default)]
+    pub default_hide_maps: Vec<String>,
 }
 
 fn default_mode() -> String {
@@ -177,6 +186,10 @@ impl Config {
                 cpu_spoof: app.cpu_spoof.clone(),
                 cpu_spoof_custom: app.cpu_spoof_custom.clone(),
                 cpuinfo_content: None,
+                hide_maps: app
+                    .hide_maps
+                    .clone()
+                    .unwrap_or_else(|| self.default_hide_maps.clone()),
             };
             merged.cpuinfo_content = merged.resolve_cpuinfo(self);
             return Some(merged);
@@ -208,6 +221,10 @@ impl Config {
                 cpu_spoof: template.cpu_spoof.clone(),
                 cpu_spoof_custom: template.cpu_spoof_custom.clone(),
                 cpuinfo_content: None,
+                hide_maps: template
+                    .hide_maps
+                    .clone()
+                    .unwrap_or_else(|| self.default_hide_maps.clone()),
             };
             merged.cpuinfo_content = merged.resolve_cpuinfo(self);
             return Some(merged);
@@ -426,6 +443,8 @@ pub struct MergedAppConfig {
     pub cpu_spoof_custom: Option<String>,
     /// 最终要挂载到 /proc/cpuinfo 的内容（已解析完成）
     pub cpuinfo_content: Option<String>,
+    /// 要从 /proc/self/maps 中清除的属性映射模式列表
+    pub hide_maps: Vec<String>,
 }
 
 /// 属性名 → SELinux context 硬编码映射。

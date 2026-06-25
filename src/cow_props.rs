@@ -140,6 +140,46 @@ fn cow_patch_existing(
     Ok(true)
 }
 
+/// munmap `/dev/__properties__/*` 中路径匹配指定模式的映射。
+/// 这些属性值为空，munmap 不影响任何功能。
+pub fn unmap_prop_areas(patterns: &[String]) {
+    if patterns.is_empty() {
+        return;
+    }
+
+    let Ok(maps) = std::fs::read_to_string("/proc/self/maps") else {
+        return;
+    };
+
+    for line in maps.lines() {
+        if !line.contains("/dev/__properties__/") {
+            continue;
+        }
+        if !patterns.iter().any(|p| line.contains(p.as_str())) {
+            continue;
+        }
+
+        let mut ws = line.split_whitespace();
+        let Some(range) = ws.next() else { continue };
+
+        let Some((start_s, end_s)) = range.split_once('-') else {
+            continue;
+        };
+        let Ok(start) = usize::from_str_radix(start_s, 16) else {
+            continue;
+        };
+        let Ok(end) = usize::from_str_radix(end_s, 16) else {
+            continue;
+        };
+
+        let size = end - start;
+        let ret = unsafe { libc::munmap(start as *mut libc::c_void, size) };
+        if ret == 0 {
+            info!("Unmapped prop area: {range}");
+        }
+    }
+}
+
 // ── 映射收集 ───────────────────────────────────────────────────────────────
 
 struct PropAreaMapping {
