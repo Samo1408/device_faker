@@ -14,6 +14,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use log::{debug, info, warn};
+use prop_rs_android::mmap_prop_area::MmapPropArea;
 
 // ── bionic 类型定义 ────────────────────────────────────────────────────────
 
@@ -79,11 +80,20 @@ pub fn apply_cow_spoof(
 
     let mappings = collect_prop_area_mappings();
 
+    // 预初始化 serial area（供所有 update() 调用共享）
+    let mut serial_pa = match cow_serial_area(&mappings) {
+        Ok(pa) => Some(pa),
+        Err(e) => {
+            warn!("Failed to COW serial area: {e}, patches will use fallback");
+            None
+        }
+    };
+
     let mut cow_patched = 0usize;
     let mut cow_inserted = 0usize;
 
     for (key, value) in &filtered {
-        match cow_patch_existing(find_fn, key, value, &mappings) {
+        match cow_patch_existing(find_fn, key, value, &mappings, serial_pa.as_deref_mut()) {
             Ok(true) => cow_patched += 1,
             Ok(false) => {
                 // 属性不存在 → 尝试在 COW prop_area 中插入新 trie 节点
@@ -120,7 +130,10 @@ fn cow_patch_existing(
     key: &str,
     value: &str,
     mappings: &[PropAreaMapping],
+    serial_pa: Option<&mut MmapPropArea>,
 ) -> anyhow::Result<bool> {
+    use memmap2::MmapMut;
+
     let ckey =
         std::ffi::CString::new(key).map_err(|_| anyhow::anyhow!("invalid property name: {key}"))?;
     let prop_ptr = unsafe { find_fn(ckey.as_ptr()) };
@@ -128,14 +141,34 @@ fn cow_patch_existing(
         return Ok(false); // 属性不存在
     }
 
-    // 确保 prop_info 所在的 prop_area 已 COW remap
-    // 如果 remap 失败（mapping 找不到），返回 false 让 companion 接管
+    // COW remap prop_info 所在的 prop_area
     if ensure_prop_area_private(prop_ptr as *const u8, mappings).is_err() {
         return Ok(false);
     }
 
-    // Patch serial + value
-    patch_prop_info(prop_ptr as *mut u8, value);
+    // 构造 MmapPropArea（transmute ptr+len → MmapMut，ManuallyDrop 防 munmap）
+    let mapping = mappings
+        .iter()
+        .find(|m| {
+            let addr = prop_ptr as usize;
+            addr >= m.start && addr < m.end
+        })
+        .ok_or_else(|| anyhow::anyhow!("mapping not found for prop_ptr"))?;
+
+    let size = mapping.end - mapping.start;
+    let ptr = mapping.start as *mut u8;
+    let mmap_mut = unsafe { std::mem::transmute::<(*mut u8, usize), MmapMut>((ptr, size)) };
+    let mut area = std::mem::ManuallyDrop::new(MmapPropArea::new(mmap_mut)?);
+
+    // 用 MmapPropArea::find() 获取 data offset
+    let data_off = area
+        .find(key)?
+        .ok_or_else(|| anyhow::anyhow!("'{key}' not found after __system_property_find"))?;
+
+    // 用 update() 完成完整的 bionic writer 协议：
+    // dirty bit → value write → release fence → visible serial → futex wake → hidden serial
+    let pa = serial_pa.ok_or_else(|| anyhow::anyhow!("serial area not available"))?;
+    area.update(data_off, value, pa)?;
 
     Ok(true)
 }
@@ -307,36 +340,29 @@ fn ensure_prop_area_private(
     Ok(())
 }
 
-// ── 属性 patch ─────────────────────────────────────────────────────────────
+// ── Serial area COW ──────────────────────────────────────────────────────
 
-/// 原地 patch prop_info 的 serial + value（bionic 写入协议）。
-fn patch_prop_info(prop_ptr: *mut u8, value: &str) {
-    let serial_ptr = prop_ptr as *mut u32;
-    let value_ptr = unsafe { prop_ptr.add(4) };
-    let val_bytes = value.as_bytes();
-    let len = val_bytes.len();
+/// 找到 `properties_serial` mapping 并 COW remap，构造 `MmapPropArea`。
+///
+/// `MmapPropArea::update()` 需要 `serial_pa` 来 bump global area serial + futex wake。
+/// COW-remap 后 bump 只影响当前进程的私有副本，不会错误通知其他进程。
+fn cow_serial_area(
+    mappings: &[PropAreaMapping],
+) -> anyhow::Result<std::mem::ManuallyDrop<MmapPropArea>> {
+    use memmap2::MmapMut;
 
-    unsafe {
-        let old = serial_ptr.read_volatile();
+    let serial_mapping = mappings
+        .iter()
+        .find(|m| m.path.ends_with("/properties_serial"))
+        .ok_or_else(|| anyhow::anyhow!("properties_serial mapping not found"))?;
 
-        // dirty bit
-        serial_ptr.write_volatile(old | 1);
-        std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::Release);
+    ensure_prop_area_private(serial_mapping.start as *const u8, mappings)?;
 
-        // 写新值
-        std::ptr::copy_nonoverlapping(val_bytes.as_ptr(), value_ptr, len);
-        value_ptr.add(len).write(0);
-        if len + 1 < PROP_VALUE_MAX {
-            std::ptr::write_bytes(value_ptr.add(len + 1), 0, PROP_VALUE_MAX - len - 1);
-        }
-        std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::Release);
-
-        // 写最终 serial
-        let new_serial =
-            ((len as u32) << 24) | (((old & 0x00FF_FFFFu32).wrapping_add(2)) & 0x00FF_FFFFu32);
-        serial_ptr.write_volatile(new_serial);
-        std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::Release);
-    }
+    let size = serial_mapping.end - serial_mapping.start;
+    let ptr = serial_mapping.start as *mut u8;
+    let mmap_mut = unsafe { std::mem::transmute::<(*mut u8, usize), MmapMut>((ptr, size)) };
+    let area = MmapPropArea::new(mmap_mut)?;
+    Ok(std::mem::ManuallyDrop::new(area))
 }
 
 // ── 新增属性：COW trie 插入 ───────────────────────────────────────────────
@@ -350,7 +376,6 @@ fn patch_prop_info(prop_ptr: *mut u8, value: &str) {
 /// - ManuallyDrop 防止 MmapPropArea drop → MmapMut drop → munmap（COW 副本需保持存活）
 fn cow_patch_new(key: &str, value: &str, mappings: &[PropAreaMapping]) -> anyhow::Result<bool> {
     use memmap2::MmapMut;
-    use prop_rs_android::mmap_prop_area::MmapPropArea;
 
     let key_prefix = match key.find('.') {
         Some(i) => &key[..i],
@@ -402,8 +427,27 @@ fn cow_patch_new(key: &str, value: &str, mappings: &[PropAreaMapping]) -> anyhow
     // 插入新属性
     match area.emplace(key, value.as_bytes(), 0) {
         Ok(()) => {
-            info!("COW trie: inserted '{key}' into {}", mapping.path);
-            Ok(true)
+            // 验证 emplace 结果：find + 读 serial 确认 length bits 正确
+            match area.find(key) {
+                Ok(Some(data_off)) => {
+                    let serial = area.read_serial(data_off);
+                    let len_from_serial = serial >> 24;
+                    if len_from_serial as usize == value.len() {
+                        info!("COW trie: inserted '{key}' (serial_ok, len={len_from_serial}) into {}", mapping.path);
+                    } else {
+                        warn!("COW trie: inserted '{key}' but serial len mismatch: expected={}, got={len_from_serial}", value.len());
+                    }
+                    Ok(true)
+                }
+                Ok(None) => {
+                    warn!("COW trie: emplace reported success but '{key}' not found after");
+                    Ok(false)
+                }
+                Err(e) => {
+                    warn!("COW trie: emplace ok but find failed for '{key}': {e}");
+                    Ok(false)
+                }
+            }
         }
         Err(e) => {
             warn!("COW trie emplace failed for '{key}': {e}");
