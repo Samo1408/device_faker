@@ -7,15 +7,11 @@ mod cpu_spoof;
 #[cfg(target_os = "android")]
 mod file_logger;
 mod hooks;
-mod state;
 
 use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::Context;
-use companion::{
-    handle_companion_request, restore_previous_resetprop_if_needed,
-    spoof_system_props_via_companion,
-};
+use companion::{handle_companion_request, spoof_system_props_via_companion};
 use config::Config;
 use cpu_spoof::apply_cpu_spoof;
 use hooks::hook_build_fields;
@@ -99,7 +95,9 @@ impl MyModule {
         let package_name = Self::extract_package_name(env, args)?;
         let user_id = Self::extract_android_user_id(args);
         let package_with_user = format!("{package_name}@{user_id}");
-        restore_previous_resetprop_if_needed(api, &package_with_user)?;
+
+        // companion 侧现在自己管理会话状态和恢复逻辑；
+        // Zygisk 模块侧不再需要跨应用恢复（ACTIVE_RESET_SESSION 已移除）。
 
         let config = match load_config() {
             Ok(Some(cfg)) => cfg,

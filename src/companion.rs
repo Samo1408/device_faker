@@ -3,6 +3,7 @@ use std::{
     fs::{self, OpenOptions},
     io::{Read, Write},
     os::unix::net::UnixStream,
+    sync::Mutex,
     thread,
     time::{Duration, Instant},
 };
@@ -12,7 +13,27 @@ use prop_rs_android::{resetprop::ResetProp, sys_prop};
 use serde::{Deserialize, Serialize};
 use zygisk_api::api::{V4, ZygiskApi};
 
-use crate::state::{ACTIVE_RESET_SESSION, ActiveResetSession};
+// ── Companion 侧激活会话跟踪 ─────────────────────────────────────────────────
+//
+// companion 进程持续运行，static 状态可靠（不受 Zygisk 模块 DlClose 影响）。
+// 每个 Apply 请求会先恢复上一个会话的备份，确保多应用并发时不会互相污染。
+
+static ACTIVE_SESSION: Mutex<Option<ActiveSession>> = Mutex::new(None);
+
+struct ActiveSession {
+    package: String,
+    backups: HashMap<String, String>,
+}
+
+/// 收割已退出的 watcher 子进程，避免僵尸进程积累。
+fn reap_zombie_watchers() {
+    loop {
+        match unsafe { libc::waitpid(-1, std::ptr::null_mut(), libc::WNOHANG) } {
+            0 | -1 => break,
+            _ => {} // 收割到一个僵尸，继续尝试
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CpuSpoofRequest {
@@ -39,6 +60,7 @@ pub fn spoof_system_props_via_companion(
         pid: std::process::id(),
         props: prop_map.clone(),
         delete_props: delete_props.to_vec(),
+        package_name: package_name.to_string(),
     });
 
     let response = send_companion_command(api, &request)?;
@@ -50,59 +72,8 @@ pub fn spoof_system_props_via_companion(
         );
     }
 
-    if let Some(backups) = response.backups {
-        *ACTIVE_RESET_SESSION.lock().unwrap() = Some(ActiveResetSession {
-            package: package_name.to_string(),
-            backups,
-        });
-    } else {
-        warn!("Companion did not return property backups; automatic restore may be skipped");
-    }
-
-    Ok(())
-}
-
-pub fn restore_previous_resetprop_if_needed(
-    api: &mut ZygiskApi<V4>,
-    current_package: &str,
-) -> anyhow::Result<()> {
-    let mut guard = ACTIVE_RESET_SESSION.lock().unwrap();
-    let pending = guard.take();
-
-    match pending {
-        Some(session) if session.package != current_package => {
-            if let Err(e) = restore_props_via_companion(api, &session.backups) {
-                error!("Failed to restore previous resetprop session: {e}");
-            }
-        }
-        other => {
-            *guard = other;
-        }
-    }
-
-    Ok(())
-}
-
-fn restore_props_via_companion(
-    api: &mut ZygiskApi<V4>,
-    backups: &HashMap<String, String>,
-) -> anyhow::Result<()> {
-    if backups.is_empty() {
-        return Ok(());
-    }
-
-    let request = CompanionRequest::Restore(RestoreRequest {
-        props: backups.clone(),
-    });
-
-    let response = send_companion_command(api, &request)?;
-    if response.status != 0 {
-        anyhow::bail!(
-            response
-                .message
-                .unwrap_or_else(|| "companion restore failed".to_string())
-        );
-    }
+    // companion 侧现在自己管理会话状态和恢复逻辑；
+    // Zygisk 模块侧不再需要 ACTIVE_RESET_SESSION。
 
     Ok(())
 }
@@ -241,6 +212,44 @@ fn apply_resetprop_session(
         return Ok(HashMap::new());
     }
 
+    // ① 收割已退出的 watcher 僵尸进程
+    reap_zombie_watchers();
+
+    // ② 检查是否为同一 package 的重复请求（如多进程 app 的子进程）
+    //    同一 package 跳过恢复 + 重新应用，避免多 watcher 互相干扰。
+    {
+        let guard = ACTIVE_SESSION.lock().unwrap();
+        if let Some(ref active) = *guard
+            && active.package == request.package_name
+        {
+            info!(
+                "Skipping duplicate Apply for package '{}' (pid {}), session already active",
+                request.package_name, request.pid
+            );
+            return Ok(active.backups.clone());
+        }
+    }
+
+    // ③ 如果存在旧会话（不同 package），先恢复旧会话的备份
+    {
+        let mut guard = ACTIVE_SESSION.lock().unwrap();
+        if let Some(old) = guard.take() {
+            info!(
+                "Restoring previous session backups (package: {}, {} keys) before applying new session for '{}'",
+                old.package,
+                old.backups.len(),
+                request.package_name
+            );
+            for entry in &old.backups {
+                if let Err(e) = apply_resetprop(entry.0, entry.1) {
+                    warn!("Failed to restore old session key '{}': {e}", entry.0);
+                }
+            }
+            rebuild_all_contexts(old.backups.keys());
+        }
+    }
+
+    // ④ 备份当前属性（旧会话已恢复，此时为真实值）
     let mut backups = Vec::with_capacity(request.props.len() + request.delete_props.len());
 
     for key in request.props.keys() {
@@ -264,6 +273,7 @@ fn apply_resetprop_session(
         .map(|entry| (entry.key.clone(), entry.original_value.clone()))
         .collect();
 
+    // ⑤ 应用新伪装值
     for (key, value) in &request.props {
         apply_resetprop(key, value)?;
     }
@@ -272,10 +282,31 @@ fn apply_resetprop_session(
         resetprop_delete(key)?;
     }
 
-    // Rebuild prop area to reclaim holes left by deletes/overwrites.
     rebuild_all_contexts(request.props.keys().chain(request.delete_props.iter()));
 
-    spawn_restore_watcher(request.pid, request.props, request.delete_props, backups)?;
+    // ⑥ Fork 恢复 watcher
+    if let Err(e) = spawn_restore_watcher(
+        request.pid,
+        request.props.clone(),
+        request.delete_props.clone(),
+        backups.clone(),
+    ) {
+        error!("Failed to spawn restore watcher: {e}, rolling back applied props");
+        for entry in &backups {
+            let _ = apply_resetprop(&entry.key, &entry.original_value);
+        }
+        rebuild_all_contexts(backups.iter().map(|b| &b.key));
+        anyhow::bail!("failed to spawn restore watcher: {e}");
+    }
+
+    // ⑦ 存储新会话
+    *ACTIVE_SESSION.lock().unwrap() = Some(ActiveSession {
+        package: request.package_name.clone(),
+        backups: backups
+            .iter()
+            .map(|b| (b.key.clone(), b.original_value.clone()))
+            .collect(),
+    });
 
     Ok(backups_for_response)
 }
@@ -350,7 +381,7 @@ fn spawn_restore_watcher(
     props: HashMap<String, String>,
     delete_props: Vec<String>,
     backups: Vec<PropBackup>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<i32> {
     unsafe {
         match libc::fork() {
             -1 => anyhow::bail!("fork failed: {}", std::io::Error::last_os_error()),
@@ -365,7 +396,10 @@ fn spawn_restore_watcher(
                 }
                 libc::_exit(0);
             }
-            _ => Ok(()),
+            child_pid => {
+                info!("Spawned restore watcher pid={child_pid} for app pid={pid}");
+                Ok(child_pid)
+            }
         }
     }
 }
@@ -490,7 +524,11 @@ fn watch_via_inotify(
             if err.kind() == std::io::ErrorKind::Interrupted {
                 continue;
             }
-            warn!("restore watcher: epoll_wait error: {err}");
+            // 非 EINTR 错误（如 EBADF），退出前务必恢复属性
+            warn!("restore watcher: epoll_wait error: {err}, attempting restore before exit");
+            if is_spoof_applied {
+                let _ = restore_props_batch(backups);
+            }
             break;
         }
 
@@ -674,6 +712,7 @@ pub(crate) struct ResetpropSessionRequest {
     pid: u32,
     props: HashMap<String, String>,
     delete_props: Vec<String>,
+    package_name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -433,9 +433,15 @@ fn cow_patch_new(key: &str, value: &str, mappings: &[PropAreaMapping]) -> anyhow
                     let serial = area.read_serial(data_off);
                     let len_from_serial = serial >> 24;
                     if len_from_serial as usize == value.len() {
-                        info!("COW trie: inserted '{key}' (serial_ok, len={len_from_serial}) into {}", mapping.path);
+                        info!(
+                            "COW trie: inserted '{key}' (serial_ok, len={len_from_serial}) into {}",
+                            mapping.path
+                        );
                     } else {
-                        warn!("COW trie: inserted '{key}' but serial len mismatch: expected={}, got={len_from_serial}", value.len());
+                        warn!(
+                            "COW trie: inserted '{key}' but serial len mismatch: expected={}, got={len_from_serial}",
+                            value.len()
+                        );
                     }
                     Ok(true)
                 }
