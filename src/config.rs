@@ -239,6 +239,11 @@ impl Config {
             && !marketname.is_empty()
         {
             map.insert("ro.product.marketname".to_string(), marketname.clone());
+            // OnePlus/OPPO 设备读 ro.vendor.oplus.market.name 而非 ro.product.marketname
+            map.insert(
+                "ro.vendor.oplus.market.name".to_string(),
+                marketname.clone(),
+            );
         }
         if let Some(model) = &merged.model
             && !model.is_empty()
