@@ -225,15 +225,34 @@ impl Config {
     pub fn build_merged_property_map(merged: &MergedAppConfig) -> HashMap<String, String> {
         let mut map = HashMap::new();
 
+        // 分区特定前缀：OnePlus/OPPO 等设备 bionic prefix routing 会读取这些变体
+        const PARTITION_PREFIXES: &[&str] = &[
+            "odm",
+            "vendor",
+            "system",
+            "system_ext",
+            "product",
+            "bootimage",
+        ];
+
         if let Some(manufacturer) = &merged.manufacturer
             && !manufacturer.is_empty()
         {
             map.insert("ro.product.manufacturer".to_string(), manufacturer.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(
+                    format!("ro.product.{pfx}.manufacturer"),
+                    manufacturer.clone(),
+                );
+            }
         }
         if let Some(brand) = &merged.brand
             && !brand.is_empty()
         {
             map.insert("ro.product.brand".to_string(), brand.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.brand"), brand.clone());
+            }
         }
         if let Some(marketname) = &merged.marketname
             && !marketname.is_empty()
@@ -249,21 +268,33 @@ impl Config {
             && !model.is_empty()
         {
             map.insert("ro.product.model".to_string(), model.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.model"), model.clone());
+            }
         }
         if let Some(name) = &merged.name
             && !name.is_empty()
         {
             map.insert("ro.product.name".to_string(), name.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.name"), name.clone());
+            }
         }
         if let Some(device) = &merged.device
             && !device.is_empty()
         {
             map.insert("ro.product.device".to_string(), device.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.device"), device.clone());
+            }
         } else if let Some(name) = &merged.name
             && !name.is_empty()
         {
             // Fallback to name if device is not set (legacy behavior)
             map.insert("ro.product.device".to_string(), name.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.device"), name.clone());
+            }
         }
 
         if let Some(fingerprint) = &merged.fingerprint

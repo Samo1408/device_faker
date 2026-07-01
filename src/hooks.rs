@@ -50,6 +50,15 @@ pub fn hook_build_fields(
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
+        // HARDWARE 字段：从 custom_props 中的 ro.hardware 取值
+        if let Some(custom_props) = &merged_config.custom_props
+            && let Some(hardware) = custom_props.get("ro.hardware")
+            && !hardware.is_empty()
+        {
+            set_build_field(jenv, &build_class, jni_str!("HARDWARE"), hardware)
+                .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
+        }
+
         if let Some(fingerprint) = &merged_config.fingerprint
             && !fingerprint.is_empty()
         {

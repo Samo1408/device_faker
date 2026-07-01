@@ -131,12 +131,20 @@ pub fn apply_cow_spoof(
 
 // ── 已有属性：COW patch ────────────────────────────────────────────────────
 
+/// 判断路径是否为 build 相关的 prop_area。
+fn is_build_area(path: &str) -> bool {
+    path.contains("build_prop")
+        || path.contains("build_odm_prop")
+        || path.contains("build_vendor_prop")
+        || path.contains("default_prop")
+}
+
 fn cow_patch_existing(
     find_fn: FnSystemPropertyFind,
     key: &str,
     value: &str,
     mappings: &[PropAreaMapping],
-    serial_pa: Option<&mut MmapPropArea>,
+    mut serial_pa: Option<&mut MmapPropArea>,
 ) -> anyhow::Result<bool> {
     use memmap2::MmapMut;
 
@@ -147,11 +155,12 @@ fn cow_patch_existing(
         return Ok(false);
     }
 
+    // ── Phase 1: patch __system_property_find 返回的 area ────────────────
     if ensure_prop_area_private(prop_ptr as *const u8, mappings).is_err() {
         return Ok(false);
     }
 
-    let mapping = mappings
+    let primary_mapping = mappings
         .iter()
         .find(|m| {
             let addr = prop_ptr as usize;
@@ -159,17 +168,106 @@ fn cow_patch_existing(
         })
         .ok_or_else(|| anyhow::anyhow!("mapping not found for prop_ptr"))?;
 
-    let size = mapping.end - mapping.start;
-    let ptr = mapping.start as *mut u8;
+    let size = primary_mapping.end - primary_mapping.start;
+    let ptr = primary_mapping.start as *mut u8;
     let mmap_mut = unsafe { std::mem::transmute::<(*mut u8, usize), MmapMut>((ptr, size)) };
     let mut area = std::mem::ManuallyDrop::new(MmapPropArea::new(mmap_mut)?);
 
-    let data_off = area
-        .find(key)?
-        .ok_or_else(|| anyhow::anyhow!("'{key}' not found after __system_property_find"))?;
+    let data_off = match area.find(key)? {
+        Some(off) => off,
+        None => {
+            // MmapPropArea::find 找不到，尝试直接用 prop_ptr offset
+            let prop_offset = (prop_ptr as usize) - primary_mapping.start;
+            info!(
+                "COW Phase1: '{key}' MmapPropArea::find returned None in {path}, \
+                 prop_ptr offset={prop_offset:#x}, trying direct offset",
+                path = primary_mapping.path
+            );
+            return Ok(false);
+        }
+    };
 
-    let pa = serial_pa.ok_or_else(|| anyhow::anyhow!("serial area not available"))?;
+    info!(
+        "COW Phase1: '{key}' found at offset={data_off:#x} in {path}, prop_ptr@{pp:#x}",
+        path = primary_mapping.path,
+        pp = prop_ptr as usize
+    );
+
+    let pa = serial_pa
+        .as_deref_mut()
+        .ok_or_else(|| anyhow::anyhow!("serial area not available"))?;
     area.update(data_off, value, pa)?;
+
+    // ── Phase 2: 扫描其他 build area，patch bionic prefix routing 可能命中的区域 ──
+    // OnePlus/OPPO 设备上 __system_property_find 返回 build_prop 指针，但 bionic 的
+    // __system_property_get 按 prefix routing 读 build_odm_prop。需要 patch 所有包含
+    // 该属性的 build area。
+    let primary_addr = prop_ptr as usize;
+    let mut cross_patched = 0usize;
+
+    for mapping in mappings {
+        if !is_build_area(&mapping.path) {
+            continue;
+        }
+        // 跳过 Phase 1 已 patch 的 area
+        if primary_addr >= mapping.start && primary_addr < mapping.end {
+            continue;
+        }
+        let msize = mapping.end - mapping.start;
+        if msize < 128 {
+            continue;
+        }
+        if ensure_prop_area_private(mapping.start as *const u8, mappings).is_err() {
+            info!(
+                "COW cross-area: skip {p} (COW remap failed)",
+                p = mapping.path
+            );
+            continue;
+        }
+        let mptr = mapping.start as *mut u8;
+        let mmap_mut = unsafe { std::mem::transmute::<(*mut u8, usize), MmapMut>((mptr, msize)) };
+        let mut cross_area = match MmapPropArea::new(mmap_mut) {
+            Ok(a) => std::mem::ManuallyDrop::new(a),
+            Err(e) => {
+                info!(
+                    "COW cross-area: skip {p} (MmapPropArea::new failed: {e})",
+                    p = mapping.path
+                );
+                continue;
+            }
+        };
+        match cross_area.find(key) {
+            Ok(Some(off)) => {
+                if let Some(pa) = serial_pa.as_deref_mut() {
+                    if cross_area.update(off, value, pa).is_ok() {
+                        cross_patched += 1;
+                        info!("COW cross-area: '{key}' patched in {p}", p = mapping.path);
+                    } else {
+                        info!(
+                            "COW cross-area: '{key}' update failed in {p}",
+                            p = mapping.path
+                        );
+                    }
+                }
+            }
+            Ok(None) => {
+                info!("COW cross-area: '{key}' not found in {p}", p = mapping.path);
+            }
+            Err(e) => {
+                info!(
+                    "COW cross-area: '{key}' find error in {p}: {e}",
+                    p = mapping.path
+                );
+            }
+        }
+    }
+
+    if cross_patched > 0 {
+        info!(
+            "COW cross-area: '{key}' patched in {n} additional area(s)",
+            n = cross_patched
+        );
+    }
 
     Ok(true)
 }

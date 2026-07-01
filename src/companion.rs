@@ -22,6 +22,7 @@ static ACTIVE_SESSION: Mutex<Option<ActiveSession>> = Mutex::new(None);
 
 struct ActiveSession {
     package: String,
+    pid: u32,
     backups: HashMap<String, String>,
 }
 
@@ -216,17 +217,28 @@ fn apply_resetprop_session(
     reap_zombie_watchers();
 
     // ② 检查是否为同一 package 的重复请求（如多进程 app 的子进程）
-    //    同一 package 跳过恢复 + 重新应用，避免多 watcher 互相干扰。
+    //    同一 package 且旧进程仍存活时跳过恢复 + 重新应用。
+    //    如果旧进程已退出，清除旧会话并重新应用（属性可能已被恢复）。
     {
-        let guard = ACTIVE_SESSION.lock().unwrap();
+        let mut guard = ACTIVE_SESSION.lock().unwrap();
         if let Some(ref active) = *guard
             && active.package == request.package_name
         {
-            info!(
-                "Skipping duplicate Apply for package '{}' (pid {}), session already active",
-                request.package_name, request.pid
-            );
-            return Ok(active.backups.clone());
+            // 检查旧进程是否仍存活
+            let old_alive = unsafe { libc::kill(active.pid as i32, 0) } == 0;
+            if old_alive {
+                info!(
+                    "Skipping duplicate Apply for package '{}' (pid {}), session already active (old pid {} alive)",
+                    request.package_name, request.pid, active.pid
+                );
+                return Ok(active.backups.clone());
+            } else {
+                info!(
+                    "Old session for package '{}' (pid {}) is dead, clearing and re-applying for new pid {}",
+                    request.package_name, active.pid, request.pid
+                );
+                guard.take();
+            }
         }
     }
 
@@ -302,6 +314,7 @@ fn apply_resetprop_session(
     // ⑦ 存储新会话
     *ACTIVE_SESSION.lock().unwrap() = Some(ActiveSession {
         package: request.package_name.clone(),
+        pid: request.pid,
         backups: backups
             .iter()
             .map(|b| (b.key.clone(), b.original_value.clone()))
@@ -360,8 +373,13 @@ fn new_resetprop() -> anyhow::Result<ResetProp> {
 fn apply_resetprop(key: &str, value: &str) -> anyhow::Result<()> {
     let rp = new_resetprop()?;
 
-    if rp.set(key, value).is_err() {
-        anyhow::bail!("resetprop failed for {key}");
+    if let Err(e) = rp.set(key, value) {
+        // 值超过 PROP_VALUE_MAX 时，inline prop_info 无法原地扩展。
+        // 先删除旧属性（释放 inline 空间），再重新创建为 long 模式。
+        warn!("resetprop set failed for {key}, trying delete+set: {e}");
+        let _ = rp.delete(key);
+        rp.set(key, value)
+            .map_err(|e2| anyhow::anyhow!("resetprop delete+set failed for {key}: {e2}"))?;
     }
     Ok(())
 }
