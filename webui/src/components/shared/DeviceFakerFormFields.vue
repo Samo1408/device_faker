@@ -100,25 +100,29 @@
     </el-select>
   </el-form-item>
 
-  <el-form-item :label="t('templates.fields.cpu_spoof')">
-    <el-select
-      v-model="formData.cpu_spoof"
-      :placeholder="t('templates.placeholders.cpu_spoof')"
-      clearable
-      style="width: 100%"
-    >
-      <el-option v-for="name in availableCpuPresets" :key="name" :label="name" :value="name" />
-    </el-select>
-  </el-form-item>
+  <el-collapse>
+    <el-collapse-item :title="t('templates.fields.cpu')" name="cpu">
+      <el-form-item :label="t('templates.fields.cpu_spoof')">
+        <el-select
+          v-model="formData.cpu_spoof"
+          :placeholder="t('templates.placeholders.cpu_spoof')"
+          clearable
+          style="width: 100%"
+        >
+          <el-option v-for="name in availableCpuPresets" :key="name" :label="name" :value="name" />
+        </el-select>
+      </el-form-item>
 
-  <el-form-item :label="t('templates.fields.cpu_spoof_custom')">
-    <el-input
-      v-model="formData.cpu_spoof_custom"
-      type="textarea"
-      :rows="8"
-      :placeholder="t('templates.placeholders.cpu_spoof_custom')"
-    />
-  </el-form-item>
+      <el-form-item :label="t('templates.fields.cpu_spoof_custom')">
+        <el-input
+          v-model="formData.cpu_spoof_custom"
+          type="textarea"
+          :rows="8"
+          :placeholder="t('templates.placeholders.cpu_spoof_custom')"
+        />
+      </el-form-item>
+    </el-collapse-item>
+  </el-collapse>
 
   <slot name="packages" />
 </template>
