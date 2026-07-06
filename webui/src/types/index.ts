@@ -15,6 +15,7 @@ export interface DeviceInfo {
   model?: string
   device?: string
   product?: string
+  hardware?: string
   name?: string
   marketname?: string
   fingerprint?: string

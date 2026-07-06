@@ -10,6 +10,7 @@ export interface DeviceFakerFormData {
   model: string
   device: string
   product: string
+  hardware: string
   name: string
   marketname: string
   fingerprint: string
@@ -31,6 +32,7 @@ function createEmptyFormData(): DeviceFakerFormData {
     model: '',
     device: '',
     product: '',
+    hardware: '',
     name: '',
     marketname: '',
     fingerprint: '',
@@ -54,6 +56,7 @@ export function formDataToTemplate(formData: DeviceFakerFormData, base?: Templat
     model: formData.model,
     device: formData.device,
     product: formData.product,
+    hardware: formData.hardware,
     fingerprint: formData.fingerprint,
   }
 
@@ -134,6 +137,7 @@ export function templateToFormData(template: Template): DeviceFakerFormData {
     model: template.model || '',
     device: template.device || '',
     product: template.product || '',
+    hardware: template.hardware || '',
     name: template.name || '',
     marketname: template.marketname || '',
     fingerprint: template.fingerprint || '',
@@ -156,6 +160,7 @@ export function appConfigToFormData(appConfig: AppConfig): DeviceFakerFormData {
     model: appConfig.model || '',
     device: appConfig.device || '',
     product: appConfig.product || '',
+    hardware: appConfig.hardware || '',
     name: appConfig.name || '',
     marketname: appConfig.marketname || '',
     fingerprint: appConfig.fingerprint || '',
@@ -179,6 +184,7 @@ export function formDataToAppConfig(formData: DeviceFakerFormData, packageName: 
     model: formData.model,
     device: formData.device,
     product: formData.product,
+    hardware: formData.hardware,
     name: formData.name,
     marketname: formData.marketname,
     fingerprint: formData.fingerprint,

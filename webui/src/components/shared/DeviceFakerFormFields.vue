@@ -42,6 +42,10 @@
     />
   </el-form-item>
 
+  <el-form-item :label="t('templates.fields.hardware')">
+    <el-input v-model="formData.hardware" :placeholder="t('templates.placeholders.hardware')" />
+  </el-form-item>
+
   <el-collapse>
     <el-collapse-item :title="t('templates.fields.system')" name="system">
       <el-form-item :label="t('templates.fields.build_id')">

@@ -25,6 +25,8 @@ pub struct DeviceTemplate {
     #[serde(default)]
     pub product: Option<String>,
     #[serde(default)]
+    pub hardware: Option<String>,
+    #[serde(default)]
     pub fingerprint: Option<String>,
     #[serde(default)]
     pub build_id: Option<String>,
@@ -75,6 +77,8 @@ pub struct AppConfig {
     pub device: Option<String>,
     #[serde(default)]
     pub product: Option<String>,
+    #[serde(default)]
+    pub hardware: Option<String>,
     #[serde(default)]
     pub fingerprint: Option<String>,
     #[serde(default)]
@@ -162,6 +166,7 @@ impl Config {
                 name: app.name.clone(),
                 device: app.device.clone(),
                 product: app.product.clone(),
+                hardware: app.hardware.clone(),
                 fingerprint: app.fingerprint.clone(),
                 build_id: app.build_id.clone(),
                 characteristics: app.characteristics.clone(),
@@ -194,6 +199,7 @@ impl Config {
                 name: template.name.clone(),
                 device: template.device.clone(),
                 product: template.product.clone(),
+                hardware: template.hardware.clone(),
                 fingerprint: template.fingerprint.clone(),
                 build_id: template.build_id.clone(),
                 characteristics: template.characteristics.clone(),
@@ -295,6 +301,12 @@ impl Config {
             for pfx in PARTITION_PREFIXES {
                 map.insert(format!("ro.product.{pfx}.device"), name.clone());
             }
+        }
+
+        if let Some(hardware) = &merged.hardware
+            && !hardware.is_empty()
+        {
+            map.insert("ro.hardware".to_string(), hardware.clone());
         }
 
         if let Some(fingerprint) = &merged.fingerprint
@@ -419,6 +431,9 @@ impl Config {
         {
             delete_props.push("ro.build.characteristics".to_string());
         }
+        if merged.hardware.as_ref().is_some_and(|s| s == "__DELETE__") {
+            delete_props.push("ro.hardware".to_string());
+        }
 
         if let Some(custom_props) = &merged.custom_props {
             for (key, value) in custom_props {
@@ -442,6 +457,7 @@ pub struct MergedAppConfig {
     pub name: Option<String>,
     pub device: Option<String>,
     pub product: Option<String>,
+    pub hardware: Option<String>,
     pub fingerprint: Option<String>,
     pub build_id: Option<String>,
     pub characteristics: Option<String>,
