@@ -269,7 +269,7 @@ onUnmounted(() => {
   padding-bottom: 5.5rem;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: none;
-  scroll-behavior: smooth;
+  overflow-anchor: none;
   touch-action: pan-y;
 }
 

@@ -3,7 +3,6 @@ import { hasVerticalScrollableAncestor } from './usePageSwipe'
 
 const OVERSCROLL_BOUNCE_MAX_PX = 120
 const OVERSCROLL_BOUNCE_RESISTANCE = 0.4
-const OVERSCROLL_STRETCH_RATIO = 0.0008
 
 function normalizeTargetElement(target: globalThis.EventTarget | null) {
   if (target instanceof HTMLElement) return target
@@ -36,9 +35,7 @@ export function useOverscrollBounce() {
   function applyTransform(el: HTMLElement, offsetPx: number) {
     const content = el.querySelector('.page-scroll-content') as HTMLElement | null
     if (!content) return
-    const stretchScale = 1 + Math.abs(offsetPx) * OVERSCROLL_STRETCH_RATIO
-    content.style.transform = `scaleY(${stretchScale})`
-    content.style.transformOrigin = offsetPx >= 0 ? '50% top' : '50% bottom'
+    content.style.transform = `translate3d(0, ${offsetPx}px, 0)`
   }
 
   function clearState() {
@@ -116,6 +113,10 @@ export function useOverscrollBounce() {
     }
 
     const maxScrollTop = Math.max(el.scrollHeight - el.clientHeight, 0)
+    if (maxScrollTop <= 0) {
+      if (offset !== 0) releaseSpring(el)
+      return
+    }
     const isAtTop = el.scrollTop <= 0
     const isAtBottom = el.scrollTop >= maxScrollTop - 1
     const pullingPastTop = isAtTop && deltaY > 0
