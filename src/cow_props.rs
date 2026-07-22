@@ -8,7 +8,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 
-use log:{info, warn};
+use log::{info, warn};
 use prop_rs_android::mmap_prop_area::MmapPropArea;
 
 // Bionic type definitions
@@ -155,17 +155,24 @@ fn cow_patch_existing(
         None => {
             let prop_offset = (prop_ptr as usize) - primary_mapping.start;
             info!(
-                "COW Phase1: '{key}' MmapPropArea::find returned None in {path}, prop_ptr offset={prop_offset:#x}, trying direct offset",
+                "COW Phase1: '{key}' MmapPropArea::find returned None in {path}, \"
+                 prop_ptr offset={prop_offset:#x}, trying direct offset",
                 path = primary_mapping.path
             );
             return Ok(false);
         }
     };
 
+    info!(
+        "COW Phase1: '{key}' found at offset={data_off:#x} in {path}, prop_ptr@{pp:#x}",
+        path = primary_mapping.path,
+        pp = prop_ptr as usize
+    );
+
     let pa = serial_pa
         .as_deref_mut()
         .ok_or_else(|| anyhow::anyhow!("serial area not available"))?;
-    area.update(data_off, value, pa)?;;
+    area.update(data_off, value, pa)?;
 
     // Phase 2: cross-patch other build areas (bionic prefix routing)
     // OnePlus/OPPO: __system_property_find returns build_prop
@@ -381,7 +388,7 @@ fn cow_serial_area(
         .find(|m| m.path.ends_with("/properties_serial"))
         .ok_or_else(|| anyhow::anyhow!("properties_serial mapping not found"))?;
 
-    ensure_prop_area_private(serial_mapping.start as *const u8, mappings)?;;
+    ensure_prop_area_private(serial_mapping.start as *const u8, mappings)?;
 
     let size = serial_mapping.end - serial_mapping.start;
     let ptr = serial_mapping.start as *mut u8;
