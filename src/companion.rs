@@ -13,10 +13,9 @@ use prop_rs_android::{resetprop::ResetProp, sys_prop};
 use serde::{Deserialize, Serialize};
 use zygisk_api::api::{V4, ZygiskApi};
 
-// ── Companion 侧激活会话跟踪 ─────────────────────────────────────────────────
-//
-// companion 进程持续运行，static 状态可靠（不受 Zygisk 模块 DlClose 影响）。
-// 每个 Apply 请求会先恢复上一个会话的备份，确保多应用并发时不会互相污染。
+// ── Companion-side active session tracking ────────────────────────────
+// Companion runs persistently; static state is reliable (unaffected by DlClose).
+// Each Apply request restores the previous session's backups first, preventing cross-contamination.
 
 static ACTIVE_SESSION: Mutex<Option<ActiveSession>> = Mutex::new(None);
 
@@ -26,12 +25,12 @@ struct ActiveSession {
     backups: HashMap<String, String>,
 }
 
-/// 收割已退出的 watcher 子进程，避免僵尸进程积累。
+/// Reap exited watcher child processes to prevent zombie accumulation.
 fn reap_zombie_watchers() {
     loop {
         match unsafe { libc::waitpid(-1, std::ptr::null_mut(), libc::WNOHANG) } {
             0 | -1 => break,
-            _ => {} // 收割到一个僵尸，继续尝试
+            _ => {} // Reaped a zombie, keep trying
         }
     }
 }
@@ -73,8 +72,8 @@ pub fn spoof_system_props_via_companion(
         );
     }
 
-    // companion 侧现在自己管理会话状态和恢复逻辑；
-    // Zygisk 模块侧不再需要 ACTIVE_RESET_SESSION。
+    // Companion now manages session state and restore logic independently;
+    // Zygisk module no longer needs ACTIVE_RESET_SESSION.
 
     Ok(())
 }
@@ -105,7 +104,7 @@ pub fn send_companion_command(
 }
 
 pub fn handle_companion_request(stream: &mut UnixStream) {
-    // companion 进程不会调用 ZygiskModule::on_load，因此需要自行初始化日志。
+    // Companion does not call ZygiskModule::on_load, so init logger manually.
     #[cfg(target_os = "android")]
     crate::file_logger::init();
 
@@ -213,18 +212,17 @@ fn apply_resetprop_session(
         return Ok(HashMap::new());
     }
 
-    // ① 收割已退出的 watcher 僵尸进程
+    // ① Reap exited watcher zombies
     reap_zombie_watchers();
 
-    // ② 检查是否为同一 package 的重复请求（如多进程 app 的子进程）
-    //    同一 package 且旧进程仍存活时跳过恢复 + 重新应用。
-    //    如果旧进程已退出，清除旧会话并重新应用（属性可能已被恢复）。
+    // ② Check for duplicate request from same package (e.g. multi-process app)
+    //    Skip restore+reapply if same package and old process is still alive.
     {
         let mut guard = ACTIVE_SESSION.lock().unwrap();
         if let Some(ref active) = *guard
             && active.package == request.package_name
         {
-            // 检查旧进程是否仍存活
+            // Check if old process is still alive
             let old_alive = unsafe { libc::kill(active.pid as i32, 0) } == 0;
             if old_alive {
                 info!(
@@ -242,7 +240,7 @@ fn apply_resetprop_session(
         }
     }
 
-    // ③ 如果存在旧会话（不同 package），先恢复旧会话的备份
+    // ③ If an old session exists (different package), restore its backups first
     {
         let mut guard = ACTIVE_SESSION.lock().unwrap();
         if let Some(old) = guard.take() {
@@ -261,7 +259,7 @@ fn apply_resetprop_session(
         }
     }
 
-    // ④ 备份当前属性（旧会话已恢复，此时为真实值）
+    // ④ Backup current properties (old session restored, now at real values)
     let mut backups = Vec::with_capacity(request.props.len() + request.delete_props.len());
 
     for key in request.props.keys() {
@@ -285,7 +283,7 @@ fn apply_resetprop_session(
         .map(|entry| (entry.key.clone(), entry.original_value.clone()))
         .collect();
 
-    // ⑤ 应用新伪装值
+    // ⑤ Apply new spoofed values
     for (key, value) in &request.props {
         apply_resetprop(key, value)?;
     }
@@ -296,7 +294,7 @@ fn apply_resetprop_session(
 
     rebuild_all_contexts(request.props.keys().chain(request.delete_props.iter()));
 
-    // ⑥ Fork 恢复 watcher
+    // ⑥ Fork restore watcher
     if let Err(e) = spawn_restore_watcher(
         request.pid,
         request.props.clone(),
@@ -311,7 +309,7 @@ fn apply_resetprop_session(
         anyhow::bail!("failed to spawn restore watcher: {e}");
     }
 
-    // ⑦ 存储新会话
+    // ⑦ Store new session
     *ACTIVE_SESSION.lock().unwrap() = Some(ActiveSession {
         package: request.package_name.clone(),
         pid: request.pid,
@@ -374,8 +372,8 @@ fn apply_resetprop(key: &str, value: &str) -> anyhow::Result<()> {
     let rp = new_resetprop()?;
 
     if let Err(e) = rp.set(key, value) {
-        // 值超过 PROP_VALUE_MAX 时，inline prop_info 无法原地扩展。
-        // 先删除旧属性（释放 inline 空间），再重新创建为 long 模式。
+        // Value exceeds PROP_VALUE_MAX; inline prop_info cannot expand in-place.
+        // Delete old property (free inline space), then recreate in long mode.
         warn!("resetprop set failed for {key}, trying delete+set: {e}");
         let _ = rp.delete(key);
         rp.set(key, value)
@@ -428,8 +426,8 @@ fn watch_process_state_and_sync_props(
     delete_props: &[String],
     backups: &[PropBackup],
 ) -> anyhow::Result<()> {
-    // 优先使用 inotify 监听 oom_score_adj（事件驱动，零轮询）。
-    // 回退到 /proc/<pid>/cgroup 轮询（inotify 在部分设备/内核上不可用）。
+    // Prefer inotify on oom_score_adj (event-driven, zero polling).
+    // Fallback to /proc/<pid>/cgroup polling (inotify unavailable on some devices/kernels).
     match watch_via_inotify(pid, props, delete_props, backups) {
         Ok(()) => return Ok(()),
         Err(e) => {
@@ -440,15 +438,12 @@ fn watch_process_state_and_sync_props(
     watch_via_cgroup_polling(pid, props, delete_props, backups)
 }
 
-/// 事件驱动方案：inotify 监听 /proc/<pid>/oom_score_adj + pidfd 监听进程退出。
-///
-/// Android 的 OomAdjuster 在 app 前后台切换时写入 oom_score_adj：
-/// - 前台: 0
-/// - 可见: 100
-/// - 后台/缓存: 200-900+
-///
-/// inotify IN_MODIFY 在 procfs 的 oom_score_adj 上已验证可用（Android 内核）。
-/// 使用 epoll 同时监听 inotify fd 和 pidfd，阻塞直到事件到达，零轮询。
+/// Event-driven: inotify on /proc/<pid>/oom_score_adj + pidfd for process exit.
+/// Android OomAdjuster writes oom_score_adj on foreground/background switch: /// - Foreground: 0
+/// - Visible: 100
+/// - Background/cached: 200-900+
+/// inotify IN_MODIFY on procfs oom_score_adj is verified working (Android kernel).
+/// Use epoll to monitor both inotify fd and pidfd; block until event, zero polling.
 fn watch_via_inotify(
     pid: u32,
     props: &HashMap<String, String>,
@@ -458,14 +453,14 @@ fn watch_via_inotify(
     const BACKGROUND_THRESHOLD: i32 = 200;
     const BACKGROUND_DEBOUNCE: Duration = Duration::from_secs(2);
 
-    // pidfd：事件驱动检测 app 退出
+    // pidfd: event-driven app exit detection
     let pidfd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0u32) };
     if pidfd < 0 {
         anyhow::bail!("pidfd_open failed");
     }
     let pidfd = pidfd as i32;
 
-    // inotify：监听 oom_score_adj 变化
+    // inotify: monitor oom_score_adj changes
     let ifd = unsafe { libc::inotify_init() };
     if ifd < 0 {
         unsafe { libc::close(pidfd) };
@@ -488,7 +483,7 @@ fn watch_via_inotify(
     }
     let wd = wd as u32;
 
-    // epoll：同时监听 pidfd 和 inotify fd
+    // epoll: monitor both pidfd and inotify fd
     let efd = unsafe { libc::epoll_create1(0) };
     if efd < 0 {
         unsafe {
@@ -514,18 +509,18 @@ fn watch_via_inotify(
 
     loop {
         let timeout = if let Some(bg_start) = background_since {
-            // 后台 debounce 等待中，计算剩余时间
+            // Background debounce waiting, compute remaining time
             let remaining = BACKGROUND_DEBOUNCE
                 .checked_sub(bg_start.elapsed())
                 .unwrap_or(Duration::ZERO);
             remaining.as_millis() as i32
         } else {
-            -1 // 无限阻塞
+            -1 // Block indefinitely
         };
 
         let nfds = unsafe { libc::epoll_wait(efd, events.as_mut_ptr(), 2, timeout) };
 
-        // debounce 到期检查
+        // Debounce expiration check
         if let Some(bg_start) = background_since
             && bg_start.elapsed() >= BACKGROUND_DEBOUNCE
         {
@@ -542,7 +537,7 @@ fn watch_via_inotify(
             if err.kind() == std::io::ErrorKind::Interrupted {
                 continue;
             }
-            // 非 EINTR 错误（如 EBADF），退出前务必恢复属性
+            // Non-EINTR error (e.g. EBADF), restore props before exit
             warn!("restore watcher: epoll_wait error: {err}, attempting restore before exit");
             if is_spoof_applied {
                 let _ = restore_props_batch(backups);
@@ -551,11 +546,11 @@ fn watch_via_inotify(
         }
 
         if nfds == 0 {
-            // timeout — debounce 可能已处理
+            // timeout — debounce may have been handled
             continue;
         }
 
-        // 检查是否有进程退出事件
+        // Check for process exit event
         let process_exited = events
             .iter()
             .take(nfds as usize)
@@ -568,7 +563,7 @@ fn watch_via_inotify(
             break;
         }
 
-        // oom_score_adj 变化
+        // oom_score_adj change
         for ev in events.iter().take(nfds as usize) {
             if ev.u64 == ifd as u64 {
                 let mut buf = [0u8; 512];
@@ -609,7 +604,7 @@ fn watch_via_inotify(
     Ok(())
 }
 
-/// 读取 /proc/<pid>/oom_score_adj，失败返回 0（视为前台）。
+/// Read /proc/<pid>/oom_score_adj; return 0 on failure (treated as foreground).
 fn read_oom_score_adj(pid: u32) -> i32 {
     let path = format!("/proc/{pid}/oom_score_adj");
     fs::read_to_string(&path)
@@ -618,7 +613,7 @@ fn read_oom_score_adj(pid: u32) -> i32 {
         .unwrap_or(0)
 }
 
-/// 轮询回退方案：/proc/<pid>/cgroup 检查 top-app（与原实现相同）。
+/// Polling fallback: check /proc/<pid>/cgroup for top-app (same as original impl).
 fn watch_via_cgroup_polling(
     pid: u32,
     props: &HashMap<String, String>,
