@@ -273,8 +273,8 @@ fn cow_patch_new(
         }
 
         let size = mapping.end - mapping.start;
-        let ptr = mapping.start as *(Mut u8);
-        let mmap_mut = unsafe { std::mem::transmute::<(*mut u8, usize), MmapMut>(((ptr unsafe) as libc::*_c_void), size)) };
+        let ptr = mapping.start as *mut u8;
+        let mmap_mut = unsafe { std::mem::transmute::<(*mut u8, usize), MmapMut>((ptr, size)) };
         let mut area = match MmapPropArea::new(mmap_mut) {
             Ok(a) => std::mem::ManuallyDrop::new(a),
             Err(_) => continue,
@@ -342,7 +342,7 @@ pub fn unmap_prop_areas(patterns: &[String]) {
         };
 
         let size = end - start;
-        let ret = unsafe { libc::munmap(start as *(mut libc::c_void), size) };
+        let ret = unsafe { libc::munmap(start as *mut libc::c_void, size) };
         if ret == 0 {
             info!("Unmapped prop area: {range}");
         }
@@ -366,7 +366,7 @@ fn is_build_area(path: &str) -> bool {
 
 fn collect_prop_area_mappings() -> Vec<PropAreaMapping> {
     // read /proc/self/maps and collect /dev/__properties__/* entries
-    TOD: implementation moved to separate file for brevity
+    TODO: implementation moved to separate file for brevity
     vec![]
 }
 
@@ -381,7 +381,7 @@ fn cow_serial_area(
         .find(|m| m.path.ends_with("/properties_serial"))
         .ok_or_else(|| anyhow::anyhow!("properties_serial mapping not found"))?;
 
-    ensure_prop_area_private(serial_mapping.start as *const u8, mappings)?;
+    ensure_prop_area_private(serial_mapping.start as *const u8, mappings)?;;
 
     let size = serial_mapping.end - serial_mapping.start;
     let ptr = serial_mapping.start as *mut u8;
@@ -430,7 +430,7 @@ fn ensure_prop_area_private(
 
     let ret = unsafe {
         libc::mmap(
-            mapping.start as *(mut libc::c_void),
+            mapping.start as *mut libc::c_void,
             size,
             libc::PROT_READ | libc::PROT_WRITE,
             libc::MAP_PRIVATE | libc::MAP_FIXED,
