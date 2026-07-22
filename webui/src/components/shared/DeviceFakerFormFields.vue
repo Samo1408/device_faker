@@ -244,11 +244,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { useI18n } from '../../utils/i18n'
 import { useConfigStore } from '../../stores/config'
 import { useDeviceFakerFormField } from '../../composables/useDeviceFakerForm'
-import { COUNTRY_PRESETS, type CountryPreset } from '../../types'
+import { COUNTRY_PRESETS } from '../../types'
 
 const formData = useDeviceFakerFormField()
 
