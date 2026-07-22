@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use anyhow::Result;
 use serde::Deserialize;
 
-/// 机型模板
+/// Device profile template
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceTemplate {
-    /// 包名列表
+    /// Package name list
     #[serde(default)]
     pub packages: Vec<String>,
-    /// 设备信息
+    /// Device information
     #[serde(default)]
     pub manufacturer: Option<String>,
     #[serde(default)]
@@ -32,37 +32,40 @@ pub struct DeviceTemplate {
     pub build_id: Option<String>,
     #[serde(default)]
     pub characteristics: Option<String>,
-    /// Android 版本伪装（如 "15", "14"）
+    /// Android version spoofing (e.g. "15", "14")
     #[serde(default)]
     pub android_version: Option<String>,
-    /// SDK 版本伪装（如 35, 34）
+    /// SDK version spoofing (e.g. 35, 34)
     #[serde(default)]
     pub sdk_int: Option<u32>,
-    /// 自定义属性映射表
+    /// Custom property map
     #[serde(default)]
     pub custom_props: Option<HashMap<String, String>>,
-    /// 是否为匹配的应用强制执行 FORCE_DENYLIST_UNMOUNT（默认继承全局设置）
+    /// Force FORCE_DENYLIST_UNMOUNT for matching apps (default: inherit global)
     #[serde(default)]
     pub force_denylist_unmount: Option<bool>,
-    /// CPU 伪装预设名称（引用 [cpu_presets]）
+    /// CPU spoof preset name (references [cpu_presets])
     #[serde(default)]
     pub cpu_spoof: Option<String>,
-    /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
+    /// Custom CPU spoof content (higher priority than cpu_spoof)
     #[serde(default)]
     pub cpu_spoof_custom: Option<String>,
-    /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
+    /// Property map patterns to clear from /proc/self/maps (default: inherit global)
     #[serde(default)]
     pub hide_maps: Option<Vec<String>>,
-    /// 是否跳过 COW 属性伪造，所有属性直接交给 companion resetprop 处理
-    /// true 时 getprop（独立进程）和进程内读取一致，适用于属性一致性对比检测
+    /// Skip COW property spoofing; delegate all props to companion resetprop
+    /// When true, getprop and in-process reads are consistent (for integrity detection)
     #[serde(default)]
     pub companion_resetprop: Option<bool>,
+    /// Telephony spoofing config for this template
+    #[serde(default)]
+    pub telephony: Option<TelephonyConfig>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub package: String,
-    /// 直接指定设备信息
+    /// Direct device info override
     #[serde(default)]
     pub manufacturer: Option<String>,
     #[serde(default)]
@@ -85,56 +88,62 @@ pub struct AppConfig {
     pub build_id: Option<String>,
     #[serde(default)]
     pub characteristics: Option<String>,
-    /// Android 版本伪装（如 "15", "14"）
+    /// Android version spoofing (e.g. "15", "14")
     #[serde(default)]
     pub android_version: Option<String>,
-    /// SDK 版本伪装（如 35, 34）
+    /// SDK version spoofing (e.g. 35, 34)
     #[serde(default)]
     pub sdk_int: Option<u32>,
-    /// 自定义属性映射表
+    /// Custom property map
     #[serde(default)]
     pub custom_props: Option<HashMap<String, String>>,
-    /// 是否为该应用强制执行 FORCE_DENYLIST_UNMOUNT（默认继承全局设置）
+    /// Force FORCE_DENYLIST_UNMOUNT for this app (default: inherit global setting)
     #[serde(default)]
     pub force_denylist_unmount: Option<bool>,
-    /// CPU 伪装预设名称（引用 [cpu_presets]）
+    /// CPU spoof preset name (references [cpu_presets])
     #[serde(default)]
     pub cpu_spoof: Option<String>,
-    /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
+    /// Custom CPU spoof content (higher priority than cpu_spoof)
     #[serde(default)]
     pub cpu_spoof_custom: Option<String>,
-    /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
+    /// Property map patterns to clear from /proc/self/maps (default: inherit global)
     #[serde(default)]
     pub hide_maps: Option<Vec<String>>,
-    /// 是否跳过 COW 属性伪造，所有属性直接交给 companion resetprop 处理
-    /// true 时 getprop（独立进程）和进程内读取一致，适用于属性一致性对比检测
+    /// Skip COW property spoofing; delegate all props to companion resetprop
+    /// When true, getprop and in-process reads are consistent (for integrity detection)
     #[serde(default)]
     pub companion_resetprop: Option<bool>,
+    /// Telephony spoofing config for this app
+    #[serde(default)]
+    pub telephony: Option<TelephonyConfig>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    /// 是否默认启用 FORCE_DENYLIST_UNMOUNT（避免模块挂载痕迹）
+    /// Enable FORCE_DENYLIST_UNMOUNT by default (hide module mount traces)
     #[serde(default)]
     pub default_force_denylist_unmount: bool,
-    /// 是否启用调试日志（默认关闭以提高隐蔽性）
+    /// Enable debug logging (disabled by default for stealth)
     #[serde(default)]
     pub debug: bool,
-    /// 机型设备模板定义
+    /// Device profile template definitions
     #[serde(default)]
     pub templates: HashMap<String, DeviceTemplate>,
-    /// 应用配置
+    /// Application configurations
     #[serde(default)]
     pub apps: Vec<AppConfig>,
-    /// 全局默认 CPU 伪装预设名称
+    /// Global default CPU spoof preset name
     #[serde(default)]
     pub default_cpu_spoof: Option<String>,
-    /// CPU 伪装预设表
+    /// CPU spoof preset lookup table
     #[serde(default)]
     pub cpu_presets: HashMap<String, String>,
-    /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认不启用）
+    /// Property map patterns to clear from /proc/self/maps (disabled by default)
     #[serde(default)]
     pub default_hide_maps: Vec<String>,
+    /// Global telephony / SIM spoofing configuration
+    #[serde(default)]
+    pub telephony: TelephonyConfig,
 }
 
 impl Config {
@@ -142,21 +151,21 @@ impl Config {
         Ok(toml::from_str(content)?)
     }
 
-    /// 查找包名对应的应用配置（优先）或模板配置
+    /// Find app config by package name (direct config first) or template config
     pub fn get_app_config(&self, package_name: &str) -> Option<&AppConfig> {
         self.apps.iter().find(|app| app.package == package_name)
     }
 
-    /// 查找包名对应的模板（从模板的 packages 列表中查找）
+    /// Find template for a package (from template's packages list)
     pub fn find_template_for_package(&self, package_name: &str) -> Option<&DeviceTemplate> {
         self.templates
             .values()
             .find(|template| template.packages.iter().any(|pkg| pkg == package_name))
     }
 
-    /// 获取应用的最终配置（优先查找直接配置，其次查找模板的 packages 列表）
+    /// Get merged config for a package (direct config first, then template packages)
     pub fn get_merged_config(&self, package_name: &str) -> Option<MergedAppConfig> {
-        // 优先查找直接配置的应用
+        // Prefer direct app config lookup
         if let Some(app) = self.get_app_config(package_name) {
             let mut merged = MergedAppConfig {
                 manufacturer: app.manufacturer.clone(),
@@ -184,12 +193,14 @@ impl Config {
                     .clone()
                     .unwrap_or_else(|| self.default_hide_maps.clone()),
                 companion_resetprop: app.companion_resetprop.unwrap_or(false),
+                telephony_config: app.telephony.clone().unwrap_or_else(|| self.telephony.clone()),
             };
+            merged.telephony_config.apply_country_preset();
             merged.cpuinfo_content = merged.resolve_cpuinfo(self);
             return Some(merged);
         }
 
-        // 如果没有直接配置，查找模板的 packages 列表
+        // If no direct config, search template packages list
         if let Some(template) = self.find_template_for_package(package_name) {
             let mut merged = MergedAppConfig {
                 manufacturer: template.manufacturer.clone(),
@@ -217,7 +228,9 @@ impl Config {
                     .clone()
                     .unwrap_or_else(|| self.default_hide_maps.clone()),
                 companion_resetprop: template.companion_resetprop.unwrap_or(false),
+                telephony_config: template.telephony.clone().unwrap_or_else(|| self.telephony.clone()),
             };
+            merged.telephony_config.apply_country_preset();
             merged.cpuinfo_content = merged.resolve_cpuinfo(self);
             return Some(merged);
         }
@@ -225,13 +238,13 @@ impl Config {
         None
     }
 
-    /// 构建合并配置的系统属性映射
-    /// 空字符串会被忽略，不会添加到映射中
-    /// __DELETE__ 标记的属性会被记录到 delete_props 中
+    /// Build merged system property map
+    /// Empty strings are ignored and not added to the map
+    /// Properties marked __DELETE__ are recorded in delete_props
     pub fn build_merged_property_map(merged: &MergedAppConfig) -> HashMap<String, String> {
         let mut map = HashMap::new();
 
-        // 分区特定前缀：OnePlus/OPPO 等设备 bionic prefix routing 会读取这些变体
+        // Partition-specific prefixes for OnePlus/OPPO bionic prefix routing
         const PARTITION_PREFIXES: &[&str] = &[
             "odm",
             "vendor",
@@ -264,7 +277,7 @@ impl Config {
             && !marketname.is_empty()
         {
             map.insert("ro.product.marketname".to_string(), marketname.clone());
-            // OnePlus/OPPO 设备读 ro.vendor.oplus.market.name 而非 ro.product.marketname
+            // OnePlus/OPPO devices read ro.vendor.oplus.market.name instead of ro.product.marketname
             map.insert(
                 "ro.vendor.oplus.market.name".to_string(),
                 marketname.clone(),
@@ -333,7 +346,7 @@ impl Config {
             );
         }
 
-        // Android 版本伪装属性
+        // Android version spoofing properties
         if let Some(android_version) = &merged.android_version
             && !android_version.is_empty()
         {
@@ -363,7 +376,7 @@ impl Config {
             map.insert("ro.product.build.version.sdk".to_string(), sdk_str.clone());
         }
 
-        // 自定义属性
+        // Custom properties
         if let Some(custom_props) = &merged.custom_props {
             for (key, value) in custom_props {
                 if value == "__DELETE__" {
@@ -378,10 +391,61 @@ impl Config {
             }
         }
 
+        // Telephony / SIM / Country spoofing properties
+        let tc = &merged.telephony_config;
+        if let Some(ref iso) = tc.sim_country_iso {
+            map.insert("gsb.sim.operator.iso-country".to_string(), iso.clone());
+            map.insert("gsb.operator.iso-country".to_string(), iso.clone());
+        }
+        if let Some(ref mcc) = tc.mcc {
+            map.insert("gsm.sim.operator.mcc".to_string(), mcc.clone());
+            map.insert("gsm.operator.mcc".to_string(), mcc.clone());
+        }
+        if let Some(ref mnc) = tc.mnc {
+            map.insert("gsm.sim.operator.mnc".to_string(), mnc.clone());
+            map.insert("gsm.operator.mnc".to_string(), mnc.clone());
+            if let Some(ref mcc) = tc.mcc {
+                map.insert("gsm.sim.operator.numeric".to_string(), format!("{mcc}{mnc}"));
+                map.insert("gsm.operator.numeric".to_string(), format!("{mcc}{mnc}"));
+            }
+        }
+        if let Some(ref op_name) = tc.operator_name {
+            map.insert("gsm.sim.operator.alpha".to_string(), op_name.clone());
+            map.insert("gsm.operator.alpha".to_string(), op_name.clone());
+        }
+        if let Some(ref tz) = tc.timezone {
+            map.insert("persist.sys.timezone".to_string(), tz.clone());
+        }
+        if let Some(ref iccid) = tc.iccid {
+            map.insert("persist.radio.iccid".to_string(), iccid.clone());
+        }
+        if let Some(ref soc_mfr) = tc.soc_manufacturer {
+            map.insert("ro.soc.manufacturer".to_string(), soc_mfr.clone());
+        }
+        if let Some(ref soc_model) = tc.soc_model {
+            map.insert("ro.soc.model".to_string(), soc_model.clone());
+            map.insert("ro.hardware.chipname".to_string(), soc_model.clone());
+        }
+        if let Some(ref bootloader) = tc.bootloader {
+            map.insert("ro.bootloader".to_string(), bootloader.clone());
+        }
+        if let Some(ref baseband) = tc.baseband {
+            map.insert("ro.baseband".to_string(), baseband.clone());
+        }
+        if let Some(ref serial) = tc.device_serial {
+            map.insert("ro.serialno".to_string(), serial.clone());
+        }
+        if tc.hide_airplane_mode {
+            map.insert("persist.sys.airplane_mode_on".to_string(), "0".to_string());
+        }
+        if tc.hide_developer_mode {
+            map.insert("persist.sys.developer_options".to_string(), "0".to_string());
+        }
+
         map
     }
 
-    /// 构建需要删除的属性列表（用于 companion 模式）
+    /// Build list of properties to delete (for companion mode)
     pub fn build_delete_props_list(merged: &MergedAppConfig) -> Vec<String> {
         let mut delete_props = Vec::new();
 
@@ -447,7 +511,7 @@ impl Config {
     }
 }
 
-/// 合并后的应用配置（模板 + 直接配置）
+/// Merged app config (template + direct overrides)
 #[derive(Debug, Clone)]
 pub struct MergedAppConfig {
     pub manufacturer: Option<String>,
@@ -465,20 +529,23 @@ pub struct MergedAppConfig {
     pub sdk_int: Option<u32>,
     pub custom_props: Option<HashMap<String, String>>,
     pub force_denylist_unmount: bool,
-    /// CPU 伪装预设名称
+    /// CPU spoof preset name
     pub cpu_spoof: Option<String>,
-    /// 自定义 CPU 伪装内容
+    /// Custom CPU spoof content
     pub cpu_spoof_custom: Option<String>,
-    /// 最终要挂载到 /proc/cpuinfo 的内容（已解析完成）
+    /// Final content to bind-mount to /proc/cpuinfo (resolved)
     pub cpuinfo_content: Option<String>,
-    /// 要从 /proc/self/maps 中清除的属性映射模式列表
+    /// Property map patterns to clear from /proc/self/maps
     pub hide_maps: Vec<String>,
-    /// 是否跳过 COW，所有属性走 companion resetprop（默认 false）
+    /// Skip COW; all props via companion resetprop (default: false)
     pub companion_resetprop: bool,
+    /// Telephony / SIM / country spoofing configuration
+    [#serde(default)]
+    pub telephony_config: TelephonyConfig,
 }
 
 impl MergedAppConfig {
-    /// 计算最终 CPU 伪装内容
+    /// Compute final CPU spoof content
     pub fn resolve_cpuinfo(&self, config: &Config) -> Option<String> {
         if let Some(custom) = &self.cpu_spoof_custom
             && !custom.is_empty()
@@ -492,5 +559,119 @@ impl MergedAppConfig {
             .or(config.default_cpu_spoof.as_ref())?;
 
         config.cpu_presets.get(preset_name).cloned()
+    }
+}
+
+// Telephony / SIM / Country spoofing config
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TelephonyConfig {
+    /// Selected country ISO code (e.g. "us", "gb", "de", "jp")
+    #[serde(default)]
+    pub country_iso: Option<String>,
+    /// SIM country ISO (e.g. "us")
+    #[serde(default)]
+    pub sim_country_iso: Option<String>,
+    /// Mobile Country Code (e.g. "311" for US)
+    #[serde(default)]
+    pub mcc: Option<String>,
+    /// Mobile Network Code (e.g. "480" for Verizon)
+    #[serde(default)]
+    pub mnc: Option<String>,
+    /// Operator / carrier display name
+    #[serde(default)]
+    pub operator_name: Option<String>,
+    /// SIM serial number / ICCID (editable + random generation)
+    #[serde(default)]
+    pub sim_serial: Option<String>,
+    /// Timezone ID (e.g. "America/Chicago")
+    #[serde(default)]
+    pub timezone: Option<String>,
+    /// Device serial number (editable + random generation)
+    #[serde(default)]
+    pub device_serial: Option<String>,
+    /// SoC manufacturer (e.g. "Qualcomm", "Google")
+    #[serde(default)]
+    pub soc_manufacturer: Option<String>,
+    /// SoC model (e.g. "Snapdragon 8 Gen 3", "Tensor G3")
+    #[serde(default)]
+    pub soc_model: Option<String>,
+    /// Bootloader version string (editable + random generation)
+    #[serde(default)]
+    pub bootloader: Option<String>,
+    /// Baseband version string (editable + random generation)
+    #[serde(default)]
+    pub baseband: Option<String>,
+    /// ICCID value (editable + random generation)
+    #[serde(default)]
+    pub iccid: Option<String>,
+    /// IP address spoofing (editable + random generation)
+    #[serde(default)]
+    pub ip_address: Option<String>,
+    /// Hide airplane mode (always report as OFF)
+    #[serde(default)]
+    pub hide_airplane_mode: bool,
+    /// Hide developer options and USB debugging
+    #[serde(default)]
+    pub hide_developer_mode: bool,
+    /// Country source (e.g. "network", "sim", "locale")
+    #[serde(default)]
+    pub country_source: Option<String>,
+}
+
+/// Country presets: maps ISO code → (MCC, MNC, timezone, lat, lon)
+#[derive(Debug, Clone)]
+pub struct CountryPreset {
+    pub iso: &'static str,
+    pub label: &'static str,
+    pub mcc: &'static str,
+    pub mnc: &'static str,
+    pub timezone: &'static str,
+    pub lat: f64,
+    pub lon: f64,
+}
+
+/// Built-in country presets (20+ countries).
+pub const COUNTRY_PRESETS: &[CountryPreset] = &[
+    CountryPreset { iso: "us", label: "United States", mcc: "311", mnc: "480", timezone: "America/Chicago", lat: 41.8781, lon: -87.6298 },
+    CountryPreset { iso: "gb", label: "United Kingdom", mcc: "234", mnc: "15", timezone: "Europe/London", lat: 51.5074, lon: -0.1278 },
+    CountryPreset { iso: "de", label: "Germany", mcc: "262", mnc: "01", timezone: "Europe/Berlin", lat: 52.5200, lon: 13.4050 },
+    CountryPreset { iso: "ca", label: "Canada", mcc: "302", mnc: "720", timezone: "America/Toronto", lat: 43.6532, lon: -79.3832 },
+    CountryPreset { iso: "ch", label: "Switzerland", mcc: "228", mnc: "01", timezone: "Europe/Zurich", lat: 47.3769, lon: 8.5417 },
+    CountryPreset { iso: "kr", label: "South Korea", mcc: "450", mnc: "05", timezone: "Asia/Seoul", lat: 37.5665, lon: 126.9780 },
+    CountryPreset { iso: "jp", label: "Japan", mcc: "440", mnc: "10", timezone: "Asia/Tokyo", lat: 35.6762, lon: 139.6503 },
+    CountryPreset { iso: "fr", label: "France", mcc: "208", mnc: "01", timezone: "Europe/Paris", lat: 48.8566, lon: 2.3522 },
+    CountryPreset { iso: "au", label: "Australia", mcc: "505", mnc: "01", timezone: "Australia/Sydney", lat: -33.8688, lon: 151.2093 },
+    CountryPreset { iso: "br", label: "Brazil", mcc: "724", mnc: "05", timezone: "America/Sao_Paulo", lat: -23.5505, lon: -46.6333 },
+    CountryPreset { iso: "in", label: "India", mcc: "405", mnc: "01", timezone: "Asia/Kolkata", lat: 28.6139, lon: 77.2090 },
+    CountryPreset { iso: "ru", label: "Russia", mcc: "250", mnc: "01", timezone: "Europe/Moscow", lat: 55.7558, lon: 37.6173 },
+    CountryPreset { iso: "it", label: "Italy", mcc: "222", mnc: "01", timezone: "Europe/Rome", lat: 41.9028, lon: 12.4964 },
+    CountryPreset { iso: "es", label: "Spain", mcc: "214", mnc: "01", timezone: "Europe/Madrid", lat: 40.4168, lon: -3.7038 },
+    CountryPreset { iso: "nl", label: "Netherlands", mcc: "204", mnc: "04", timezone: "Europe/Amsterdam", lat: 52.3676, lon: 4.9041 },
+    CountryPreset { iso: "se", label: "Sweden", mcc: "240", mnc: "01", timezone: "Europe/Stockholm", lat: 59.3293, lon: 18.0686 },
+    CountryPreset { iso: "no", label: "Norway", mcc: "242", mnc: "01", timezone: "Europe/Oslo", lat: 59.9139, lon: 10.7522 },
+    CountryPreset { iso: "sg", label: "Singapore", mcc: "525", mnc: "01", timezone: "Asia/Singapore", lat: 1.3521, lon: 103.8198 },
+    CountryPreset { iso: "ae", label: "UAE", mcc: "424", mnc: "02", timezone: "Asia/Dubai", lat: 25.2048, lon: 55.2708 },
+    CountryPreset { iso: "sa", label: "Saudi Arabia", mcc: "420", mnc: "01", timezone: "Asia/Riyadh", lat: 24.7136, lon: 46.6753 },
+    CountryPreset { iso: "tr", label: "Turkey", mcc: "286", mnc: "01", timezone: "Europe/Istanbul", lat: 41.0082, lon: 28.9784 },
+    CountryPreset { iso: "mx", label: "Mexico", mcc: "334", mnc: "020", timezone: "America/Mexico_City", lat: 19.4326, lon: -99.1332 },
+];
+
+impl CountryPreset {
+    pub fn find(iso: &str) -> Option<&'CountryPreset> {
+        COUNTRY_PRESETS.iter().find(|p| p.iso.eq_ignore_ascii_case(iso))
+    }
+}
+
+impl TelephonyConfig {
+    /// Merge country preset values into this config if country_iso is set.
+    pub fn apply_country_preset(&mut self) {
+        if let Some(ref iso) = self.country_iso {
+            if let Some(preset) = CountryPreset::find(iso) {
+                if self.mcc.is_none() { self.mcc = Some(preset.mcc.to_string()); }
+                if self.mnc.is_none() { self.mnc = Some(preset.mnc.to_string()); }
+                if self.sim_country_iso.is_none() { self.sim_country_iso = Some(preset.iso.to_uppercase()); }
+                if self.timezone.is_none() { self.timezone = Some(preset.timezone.to_string()); }
+            }
+        }
     }
 }
