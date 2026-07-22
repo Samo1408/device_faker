@@ -23,7 +23,28 @@ export interface DeviceFakerFormData {
   packages: string[]
   cpu_spoof: string
   cpu_spoof_custom: string
-  telephony?: TelephonyConfig
+  telephony: TelephonyConfig
+}
+
+function createEmptyTelephony(): TelephonyConfig {
+  return {
+    country_iso: undefined,
+    sim_country_iso: undefined,
+    mcc: undefined,
+    mnc: undefined,
+    operator_name: undefined,
+    sim_serial: undefined,
+    timezone: undefined,
+    device_serial: undefined,
+    soc_manufacturer: undefined,
+    soc_model: undefined,
+    bootloader: undefined,
+    baseband: undefined,
+    iccid: undefined,
+    ip_address: undefined,
+    hide_airplane_mode: false,
+    hide_developer_mode: false,
+  }
 }
 
 function createEmptyFormData(): DeviceFakerFormData {
@@ -46,7 +67,7 @@ function createEmptyFormData(): DeviceFakerFormData {
     packages: [],
     cpu_spoof: '',
     cpu_spoof_custom: '',
-    telephony: undefined,
+    telephony: createEmptyTelephony(),
   }
 }
 
@@ -129,9 +150,7 @@ export function formDataToTemplate(formData: DeviceFakerFormData, base?: Templat
     delete template.cpu_spoof_custom
   }
 
-  if (formData.telephony) {
-    template.telephony = formData.telephony
-  }
+  template.telephony = formData.telephony
 
   return template
 }
@@ -156,7 +175,7 @@ export function templateToFormData(template: Template): DeviceFakerFormData {
     packages: template.packages || [],
     cpu_spoof: template.cpu_spoof || '',
     cpu_spoof_custom: template.cpu_spoof_custom || '',
-    telephony: template.telephony || undefined,
+    telephony: template.telephony || createEmptyTelephony(),
   }
 }
 
@@ -180,7 +199,7 @@ export function appConfigToFormData(appConfig: AppConfig): DeviceFakerFormData {
     packages: [],
     cpu_spoof: appConfig.cpu_spoof || '',
     cpu_spoof_custom: appConfig.cpu_spoof_custom || '',
-    telephony: appConfig.telephony || undefined,
+    telephony: appConfig.telephony || createEmptyTelephony(),
   }
 }
 
@@ -204,7 +223,7 @@ export function formDataToAppConfig(formData: DeviceFakerFormData, packageName: 
     companion_resetprop: formData.companion_resetprop || undefined,
     cpu_spoof: formData.cpu_spoof || undefined,
     cpu_spoof_custom: formData.cpu_spoof_custom || undefined,
-    telephony: formData.telephony || undefined,
+    telephony: formData.telephony,
   }
 }
 
