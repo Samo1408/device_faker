@@ -244,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from '../../utils/i18n'
 import { useConfigStore } from '../../stores/config'
 import { useDeviceFakerFormField } from '../../composables/useDeviceFakerForm'
@@ -255,46 +255,7 @@ const formData = useDeviceFakerFormField()
 const { t } = useI18n()
 const configStore = useConfigStore()
 
-// Initialize telephony if not set
-const initTelephony = () => {
-  if (!formData.value.telephony) {
-    formData.value.telephony = reactive({
-      country_iso: undefined,
-      sim_country_iso: undefined,
-      mcc: undefined,
-      mnc: undefined,
-      operator_name: undefined,
-      sim_serial: undefined,
-      timezone: undefined,
-      device_serial: undefined,
-      soc_manufacturer: undefined,
-      soc_model: undefined,
-      bootloader: undefined,
-      baseband: undefined,
-      iccid: undefined,
-      ip_address: undefined,
-      hide_airplane_mode: false,
-      hide_developer_mode: false,
-      country_source: undefined,
-    })
-  }
-}
-initTelephony()
-
-const countryPresets = COUNTRY_PRESETS
-
-const onCountrySelect = (iso: string | undefined) => {
-  if (!iso) return
-  const preset = countryPresets.find(c => c.iso === iso)
-  if (preset && formData.value.telephony) {
-    formData.value.telephony.mcc = preset.mcc
-    formData.value.telephony.mnc = preset.mnc
-    formData.value.telephony.timezone = preset.timezone
-    formData.value.telephony.sim_country_iso = iso.toUpperCase()
-  }
-}
-
-const generateRandom = (field: string, len: number) => {
+const countryPresets = COUNTRY_PRESETS(() => {
   if (!formData.value.telephony) return
   const chars = '0123456789'
   let result = ''
