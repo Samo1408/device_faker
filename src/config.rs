@@ -540,7 +540,6 @@ pub struct MergedAppConfig {
     /// Skip COW; all props via companion resetprop (default: false)
     pub companion_resetprop: bool,
     /// Telephony / SIM / country spoofing configuration
-    #[serde(default)]
     pub telephony_config: TelephonyConfig,
 }
 
