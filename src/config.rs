@@ -62,7 +62,7 @@ pub struct DeviceTemplate {
     pub telephony: Option<TelephonyConfig>,
 }
 
-[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub package: String,
     /// Direct device info override
@@ -113,7 +113,7 @@ pub struct AppConfig {
     /// When true, getprop and in-process reads are consistent (for integrity detection)
     #[serde(default)]
     pub companion_resetprop: Option<bool>,
-    /// Telephony spoofing config for this app
+    /// Telephony spoofing config for this template
     #[serde(default)]
     pub telephony: Option<TelephonyConfig>,
 }
@@ -244,7 +244,7 @@ impl Config {
     pub fn build_merged_property_map(merged: &MergedAppConfig) -> HashMap<String, String> {
         let mut map = HashMap::new();
 
-        // Partition-specific prefixes for OnePlus/OPPO bionic prefix routing
+        // Partition-specific prefixes: OnePlus/OPPO devices use bionic prefix routing for these variants
         const PARTITION_PREFIXES: &[&str] = &[
             "odm",
             "vendor",
@@ -391,11 +391,11 @@ impl Config {
             }
         }
 
-        // Telephony / SIM / Country spoofing properties
+        // ── Telephony / SIM / Country spoofing properties ──────────────
         let tc = &merged.telephony_config;
         if let Some(ref iso) = tc.sim_country_iso {
-            map.insert("gsb.sim.operator.iso-country".to_string(), iso.clone());
-            map.insert("gsb.operator.iso-country".to_string(), iso.clone());
+            map.insert("gsm.sim.operator.iso-country".to_string(), iso.clone());
+            map.insert("gsm.operator.iso-country".to_string(), iso.clone());
         }
         if let Some(ref mcc) = tc.mcc {
             map.insert("gsm.sim.operator.mcc".to_string(), mcc.clone());
@@ -540,7 +540,7 @@ pub struct MergedAppConfig {
     /// Skip COW; all props via companion resetprop (default: false)
     pub companion_resetprop: bool,
     /// Telephony / SIM / country spoofing configuration
-    [#serde(default)]
+    #[serde(default)]
     pub telephony_config: TelephonyConfig,
 }
 
@@ -562,7 +562,10 @@ impl MergedAppConfig {
     }
 }
 
-// Telephony / SIM / Country spoofing config
+// ── Telephony / SIM / Country spoofing config ──────────────────────────────────
+
+/// Configuration for telephony, SIM, and network identity spoofing.
+/// This is embedded within the main Config and passed to each hook module.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct TelephonyConfig {
     /// Selected country ISO code (e.g. "us", "gb", "de", "jp")
@@ -657,7 +660,7 @@ pub const COUNTRY_PRESETS: &[CountryPreset] = &[
 ];
 
 impl CountryPreset {
-    pub fn find(iso: &str) -> Option<&'CountryPreset> {
+    pub fn find(iso: &str) -> Option<&'static CountryPreset> {
         COUNTRY_PRESETS.iter().find(|p| p.iso.eq_ignore_ascii_case(iso))
     }
 }
