@@ -10,9 +10,9 @@ const LOG_DIR: &str = "/data/adb/device_faker/logs";
 const LOG_PATH: &str = "/data/adb/device_faker/logs/device_faker.log";
 
 enum LoggerInner {
-    /// 能直接写文件（如 companion 进程），直接追加。
+    /// Can write directly to file (e.g. companion process); append directly.
     File(File),
-    /// 不能直接写文件（如 Zygisk 进程），先缓冲，再通过 companion flush。
+    /// Cannot write directly (e.g. Zygisk process); buffer first, flush via companion.
     Buffer(Vec<String>),
 }
 
@@ -53,8 +53,8 @@ impl Log for AdaptiveLogger {
 static ADAPTIVE_LOGGER: AdaptiveLogger = AdaptiveLogger;
 static INIT_ONCE: Once = Once::new();
 
-/// 初始化日志，尝试直接落盘。
-/// 仅 companion 进程（有 root 权限）使用。
+/// Initialize logging; try direct file write.
+/// Used only by companion process (has root).
 pub fn init() {
     INIT_ONCE.call_once(|| {
         let file = open_log_file();
@@ -69,8 +69,8 @@ pub fn init() {
     });
 }
 
-/// 仅初始化内存缓冲模式，不打开文件。
-/// 用于 `on_load`，避免在 webview_zygote 等受限制进程中触发文件访问导致进程崩溃。
+/// Initialize memory-buffer-only mode; do not open file.
+/// Used by `on_load` to avoid triggering file access in restricted processes like webview_zygote.
 pub fn init_buffer_only() {
     INIT_ONCE.call_once(|| {
         let _ = log::set_logger(&ADAPTIVE_LOGGER);
@@ -78,7 +78,7 @@ pub fn init_buffer_only() {
     });
 }
 
-/// 取出当前缓冲的所有日志行。仅 Zygisk 进程使用。
+/// Drain all buffered log lines. Used only by Zygisk process.
 pub fn drain_lines() -> Vec<String> {
     if let Ok(mut inner) = LOGGER.lock()
         && let LoggerInner::Buffer(buf) = &mut *inner
