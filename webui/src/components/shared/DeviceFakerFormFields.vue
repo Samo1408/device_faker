@@ -124,7 +124,6 @@
     </el-collapse-item>
   </el-collapse>
 
-
   <el-collapse>
     <el-collapse-item title="📱 Telephony / SIM Spoofing" name="telephony">
       <el-form-item label="Country (auto-fill MCC/MNC/Timezone)">
@@ -188,7 +187,7 @@
         </el-row>
       </el-form-item>
 
-      <el-divider content-position="left">SoC & Hardware IDs</el-divider>
+      <el-divider content-position="left">SoC & Hardware IDS</el-divider>
 
       <el-form-item label="SoC Manufacturer">
         <el-input v-model="formData.telephony.soc_manufacturer" placeholder="e.g. Qualcomm" />
@@ -255,8 +254,20 @@ const formData = useDeviceFakerFormField()
 const { t } = useI18n()
 const configStore = useConfigStore()
 
-const countryPresets = COUNTRY_PRESETS(() => {
-  if (!formData.value.telephony) return
+const countryPresets = COUNTRY_PRESETS
+
+const onCountrySelect = (iso: string | undefined) => {
+  if (!iso) return
+  const preset = countryPresets.find(c => c.iso === iso)
+  if (preset) {
+    formData.value.telephony.mcc = preset.mcc
+    formData.value.telephony.mnc = preset.mnc
+    formData.value.telephony.timezone = preset.timezone
+    formData.value.telephony.sim_country_iso = iso.toUpperCase()
+  }
+}
+
+const generateRandom = (field: string, len: number) => {
   const chars = '0123456789'
   let result = ''
   for (let i = 0; i < len; i++) {
@@ -266,7 +277,6 @@ const countryPresets = COUNTRY_PRESETS(() => {
 }
 
 const generateRandomIP = () => {
-  if (!formData.value.telephony) return
   const octet = () => Math.floor(Math.random() * 256)
   formData.value.telephony.ip_address = `${octet()}.${octet()}.${octet()}.${octet()}`
 }
@@ -274,6 +284,6 @@ const generateRandomIP = () => {
 const availableCpuPresets = computed(() => {
   const presets = configStore.config.cpu_presets
   if (!presets) return []
-  return Object.keys(presets)
+  return Object.kes(presets)
 })
 </script>
