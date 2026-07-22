@@ -1,5 +1,5 @@
 import { inject, provide, ref, type InjectionKey, type Ref } from 'vue'
-import type { Template, AppConfig } from '../types'
+import type { Template, AppConfig, TelephonyConfig } from '../types'
 
 export const DEVICE_FAKER_FORM_KEY: InjectionKey<Ref<DeviceFakerFormData>> =
   Symbol('deviceFakerForm')
@@ -23,6 +23,7 @@ export interface DeviceFakerFormData {
   packages: string[]
   cpu_spoof: string
   cpu_spoof_custom: string
+  telephony?: TelephonyConfig
 }
 
 function createEmptyFormData(): DeviceFakerFormData {
@@ -45,6 +46,7 @@ function createEmptyFormData(): DeviceFakerFormData {
     packages: [],
     cpu_spoof: '',
     cpu_spoof_custom: '',
+    telephony: undefined,
   }
 }
 
@@ -127,6 +129,10 @@ export function formDataToTemplate(formData: DeviceFakerFormData, base?: Templat
     delete template.cpu_spoof_custom
   }
 
+  if (formData.telephony) {
+    template.telephony = formData.telephony
+  }
+
   return template
 }
 
@@ -150,6 +156,7 @@ export function templateToFormData(template: Template): DeviceFakerFormData {
     packages: template.packages || [],
     cpu_spoof: template.cpu_spoof || '',
     cpu_spoof_custom: template.cpu_spoof_custom || '',
+    telephony: template.telephony || undefined,
   }
 }
 
@@ -173,6 +180,7 @@ export function appConfigToFormData(appConfig: AppConfig): DeviceFakerFormData {
     packages: [],
     cpu_spoof: appConfig.cpu_spoof || '',
     cpu_spoof_custom: appConfig.cpu_spoof_custom || '',
+    telephony: appConfig.telephony || undefined,
   }
 }
 
@@ -196,6 +204,7 @@ export function formDataToAppConfig(formData: DeviceFakerFormData, packageName: 
     companion_resetprop: formData.companion_resetprop || undefined,
     cpu_spoof: formData.cpu_spoof || undefined,
     cpu_spoof_custom: formData.cpu_spoof_custom || undefined,
+    telephony: formData.telephony || undefined,
   }
 }
 
