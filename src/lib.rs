@@ -6,6 +6,7 @@ mod cow_props;
 mod cpu_spoof;
 #[cfg(target_os = "android")]
 mod file_logger;
+mod build_hooks;
 mod hooks;
 
 use std::{collections::HashMap, fs, path::Path};
@@ -14,7 +15,8 @@ use anyhow::Context;
 use companion::{handle_companion_request, spoof_system_props_via_companion};
 use config::Config;
 use cpu_spoof::apply_cpu_spoof;
-use hooks::hook_build_fields;
+use build_hooks::hook_build_fields;
+use hooks::apply_telephony_hooks;
 use jni::{EnvUnowned, errors::ThrowRuntimeExAndDefault};
 use log::{LevelFilter, error, info};
 use zygisk_api::{
@@ -75,11 +77,11 @@ impl MyModule {
     ) -> anyhow::Result<()> {
         let result = self.do_handle_app_specialize(api, env, args);
 
-        // 在 pre_app_specialize 退出前统一 flush，确保 on_load + specialize 期间
-        // 产生的所有日志都能发给 companion 落盘。
+        // Flush log buffer before pre_app_specialize returns, ensuring all logs from
+        // on_load + specialize are sent to companion for writing.
         if let Err(e) = flush_log_buffer_to_companion(api) {
-            // 这里不能用 error!，否则会产生新的日志又无法 flush。
-            // 静默失败，日志将丢失。
+            // Don't use error! here - it would produce new log entries we can't flush.
+            // Fail silently; logs will be lost.
             let _ = e;
         }
 
@@ -96,8 +98,8 @@ impl MyModule {
         let user_id = Self::extract_android_user_id(args);
         let package_with_user = format!("{package_name}@{user_id}");
 
-        // companion 侧现在自己管理会话状态和恢复逻辑；
-        // Zygisk 模块侧不再需要跨应用恢复（ACTIVE_RESET_SESSION 已移除）。
+        // Companion now manages session state and restore logic independently;
+        // Zygisk module no longer needs cross-app restore (ACTIVE_RESET_SESSION removed).
 
         let config = match load_config() {
             Ok(Some(cfg)) => cfg,
@@ -141,27 +143,33 @@ impl MyModule {
             }
         }
 
-        // ── 统一执行流（按需调度）──────────────────────────────────────────
-        // ① JNI 字段覆写（始终执行）
+        // ── Unified execution flow (on-demand dispatch) ──────────────────────
+        // ① JNI field override (always executed)
         hook_build_fields(env, &merged)?;
         if config.debug {
             info!("Build fields faked successfully");
         }
 
-        // ①-bis 清除 /proc/self/maps 中匹配模式的属性映射（anti-detection）
+        // ②-ter Telephony / SIM / Country spoofing hooks
+        apply_telephony_hooks(env, &merged.telephony_config)?;
+        if config.debug {
+            info!("Telephony hooks applied successfully");
+        }
+
+        // ②-bis Clear matching prop areas from /proc/self/maps (anti-detection)
         if !merged.hide_maps.is_empty() {
             cow_props::unmap_prop_areas(&merged.hide_maps);
         }
 
-        // ② COW 属性伪造（per-process，覆盖 native 读取，零模块驻留）
-        //    companion_resetprop = true 时跳过 COW，全部交给 companion resetprop（全局生效）
+        // ② COW property spoofing (per-process, intercepts native reads, zero-resident)
+        //    When companion_resetprop=true, skip COW and delegate to companion (global effect)
         let prop_map = Config::build_merged_property_map(&merged);
         if config.debug {
             info!("Property map: {} entries", prop_map.len());
         }
 
         if merged.companion_resetprop {
-            // 全属性走 companion resetprop（getprop 和进程内读取一致）
+            // All props via companion resetprop (getprop and in-process reads are consistent)
             let delete_props = Config::build_delete_props_list(&merged);
             if !prop_map.is_empty() || !delete_props.is_empty() {
                 if let Err(e) =
@@ -177,7 +185,7 @@ impl MyModule {
                 }
             }
         } else {
-            // 默认路径：COW 处理，companion 只处理未找到属性和 __DELETE__
+            // Default path: COW handles found props; companion handles unfound + __DELETE__
             let unfound_props = match cow_props::apply_cow_spoof(&prop_map) {
                 Ok(unfound) => unfound,
                 Err(e) => {
@@ -206,7 +214,7 @@ impl MyModule {
             }
         }
 
-        // ④ Companion 按需：CPU spoof（仅 cpu_spoof 配置时）
+        // ④ Companion on-demand: CPU spoof (only when cpu_spoof is configured)
         if merged.cpuinfo_content.is_some() {
             if let Err(e) = apply_cpu_spoof(api, &merged, &package_name, config.debug) {
                 error!("CPU spoof failed: {e:?}");
@@ -215,14 +223,14 @@ impl MyModule {
             }
         }
 
-        // ⑤ DlClose（始终执行）
+        // ⑤ DlClose (always executed)
         api.set_option(ZygiskOption::DlCloseModuleLibrary);
         Ok(())
     }
 
     fn extract_android_user_id(args: &<V4 as ZygiskRaw>::AppSpecializeArgs) -> u32 {
-        // Android 的 app UID = userId * 100000 + appId
-        // 这里的 userId 对应 /data/user/<userId>/... 里的数字
+        // Android app UID = userId * 100000 + appId
+        // userId here maps to the number in /data/user/<userId>/
         const AID_USER_OFFSET: u32 = 100_000;
         let uid = *args.uid;
         if uid <= 0 {
