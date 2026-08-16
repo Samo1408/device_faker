@@ -38,7 +38,12 @@ export const messages = {
         module_version: '模块版本',
         impersonated_apps_count: '伪装应用数量',
         templates_count: '机型模板数量',
-        work_mode: '工作模式',
+      },
+      // i generated these fields with AI, if it's not right please update :)
+      translators: {
+        title: '译者',
+        action: '项目翻译人员',
+        dialog_title: '关于译者',
       },
       follow: {
         title: '关注模块',
@@ -54,10 +59,6 @@ export const messages = {
         open_link: '打开链接',
         repository_action_primary: '前往GitHub',
         repository_action_secondary: '给项目点个 Star',
-      },
-      mode: {
-        lite: '轻量模式',
-        full: '完整模式',
       },
     },
     templates: {
@@ -76,17 +77,21 @@ export const messages = {
         model: 'Model',
         device: 'Device',
         product: 'Product',
-        name_field: 'Name (可选，仅 full 模式)',
-        market_name: 'Market Name (可选，仅 full 模式)',
+        hardware: 'Hardware',
+        name_field: 'Name',
+        market_name: 'Market Name',
         fingerprint: 'Fingerprint',
         build_id: 'Build ID',
         android_version: 'Android 版本',
         sdk_int: 'SDK 版本',
-        characteristics: 'Characteristics (可选，仅 full 模式)',
+        characteristics: 'Characteristics',
         force_denylist_unmount: '强制卸载挂载点',
-        mode: '工作模式 (可选)',
         packages: '应用包名列表 (可选)',
         system: '系统',
+        cpu: 'CPU 伪装',
+        cpu_spoof: 'CPU 伪装预设',
+        cpu_spoof_custom: '自定义 CPU 信息',
+        companion_resetprop: 'Companion Resetprop',
       },
       placeholders: {
         name: '例如：redmagic_9_pro',
@@ -95,6 +100,7 @@ export const messages = {
         model: '例如：25010PN30C，NX769J',
         device: '例如：xuanyuan，NX769J',
         product: '例如：xuanyuan，NX769J',
+        hardware: '例如：qcom, mt6989',
         name_field: '例如：xuanyuan',
         market_name: '例如：REDMAGIC 9 Pro',
         fingerprint:
@@ -102,14 +108,10 @@ export const messages = {
         build_id: '例如：UKQ1.230917.001',
         android_version: '例如：16, 15, 14',
         sdk_int: '例如：36, 35, 34',
-        characteristics: '例如：tablet (仅 full 模式)',
-        mode: '留空使用全局默认模式',
+        characteristics: '例如：tablet',
         packages: '输入或搜索应用包名',
-      },
-      options: {
-        mode_lite: 'lite - 轻量模式（推荐，隐蔽性好）',
-        mode_full: 'full - 完整模式（全面伪装，可能被检测）',
-        mode_resetprop: 'resetprop - Resetprop 模式 (支持只读属性)',
+        cpu_spoof: '选择 config.toml 中的 CPU 预设',
+        cpu_spoof_custom: '留空则使用上方预设；填写后将完全自定义 /proc/cpuinfo 内容',
       },
       empty: {
         title: '暂无机型模板',
@@ -121,6 +123,9 @@ export const messages = {
         new_title: '新建模板',
         delete_title: '确认删除',
         delete_confirm: '确定要删除模板 "{name}" 吗？',
+        rename_overwrite_title: '覆盖现有模板',
+        rename_overwrite_confirm:
+          '要将模板 "{oldName}" 重命名为 "{newName}"，目标名称已存在，是否覆盖？',
       },
       messages: {
         name_required: '请输入模板名称',
@@ -131,18 +136,12 @@ export const messages = {
         pkg_exists: '该包名已添加',
       },
       labels: {
-        mode: '模式',
         packages: '应用包名',
         count_suffix: '个',
         version: '版本',
         version_code: '版本号',
         author: '作者',
         description: '描述',
-      },
-      values: {
-        lite: 'lite (轻量)',
-        full: 'full (完整)',
-        resetprop: 'resetprop (Resetprop)',
       },
       search: {
         placeholder: '搜索模板名称、品牌或型号',
@@ -208,6 +207,7 @@ export const messages = {
           detail_failed: '详情加载失败',
           empty_content: '模板内容为空',
           import_failed: '导入失败',
+          rate_limited: 'API 请求频率受限，请稍后重试',
         },
         messages: {
           import_success: '模板 "{name}" 导入成功',
@@ -333,24 +333,18 @@ export const messages = {
           system: '跟随系统',
           zh: '简体中文',
           en: 'English',
+          tr: 'Türkçe',
         },
       },
       module: {
         title: '模块设置',
-        default_mode: {
-          label: '默认工作模式',
-          desc: '选择模块的默认工作模式',
-          lite: '轻量模式 (推荐)',
-          full: '完整模式',
-          resetprop: 'Resetprop 模式',
-        },
         force_denylist_unmount: {
           label: '默认强制卸载挂载点',
           desc: '为目标应用启用 Zygisk 的 FORCE_DENYLIST_UNMOUNT',
         },
         debug: {
           label: '调试模式',
-          desc: '启用后可在 logcat 中查看详细日志',
+          desc: '启用后可在日志目录查看日志文件',
         },
       },
       tools: {
@@ -371,7 +365,6 @@ export const messages = {
         },
       },
       messages: {
-        default_mode_updated: '默认模式已更新',
         debug_enabled: '调试模式已启用',
         debug_disabled: '调试模式已关闭',
         read_failed: '读取文件失败或文件为空',
@@ -418,7 +411,11 @@ export const messages = {
         module_version: 'Module Version',
         impersonated_apps_count: 'Impersonated Apps',
         templates_count: 'Templates Count',
-        work_mode: 'Work Mode',
+      },
+      translators: {
+        title: 'Translators',
+        action: 'Project Translators',
+        dialog_title: 'About Translators',
       },
       follow: {
         title: 'Follow Module',
@@ -434,10 +431,6 @@ export const messages = {
         open_link: 'Open Link',
         repository_action_primary: 'Open GitHub',
         repository_action_secondary: 'Star the Project',
-      },
-      mode: {
-        lite: 'Lite Mode',
-        full: 'Full Mode',
       },
     },
     templates: {
@@ -456,17 +449,21 @@ export const messages = {
         model: 'Model',
         device: 'Device',
         product: 'Product',
-        name_field: 'Name (Optional, full mode only)',
-        market_name: 'Market Name (Optional, full mode only)',
+        hardware: 'Hardware',
+        name_field: 'Name',
+        market_name: 'Market Name',
         fingerprint: 'Fingerprint',
         build_id: 'Build ID',
         android_version: 'Android Version',
         sdk_int: 'SDK Version',
-        characteristics: 'Characteristics (Optional, full mode only)',
+        characteristics: 'Characteristics',
         force_denylist_unmount: 'Force Denylist Unmount',
-        mode: 'Work Mode (Optional)',
         packages: 'Packages (Optional)',
         system: 'System',
+        cpu: 'CPU Spoof',
+        cpu_spoof: 'CPU Spoof Preset',
+        cpu_spoof_custom: 'Custom CPU Info',
+        companion_resetprop: 'Companion Resetprop',
       },
       placeholders: {
         name: 'e.g. redmagic_9_pro',
@@ -475,6 +472,7 @@ export const messages = {
         model: 'e.g. 25010PN30C, NX769J',
         device: 'e.g. xuanyuan, NX769J',
         product: 'e.g. xuanyuan, NX769J',
+        hardware: 'e.g. qcom, mt6989',
         name_field: 'e.g. xuanyuan',
         market_name: 'e.g. REDMAGIC 9 Pro',
         fingerprint:
@@ -482,14 +480,11 @@ export const messages = {
         build_id: 'e.g. UKQ1.230917.001',
         android_version: 'e.g. 16, 15, 14',
         sdk_int: 'e.g. 36, 35, 34',
-        characteristics: 'e.g. tablet (full mode only)',
-        mode: 'Leave empty to use global default',
+        characteristics: 'e.g. tablet',
         packages: 'Enter or search package name',
-      },
-      options: {
-        mode_lite: 'lite - Lite Mode\n(Recommended, Stealthy)',
-        mode_full: 'full - Full Mode\n(Complete Spoofing, Detectable)',
-        mode_resetprop: 'resetprop - Resetprop Mode (Supports read-only props)',
+        cpu_spoof: 'Select a CPU preset from config.toml',
+        cpu_spoof_custom:
+          'Leave empty to use the preset above; fill in to fully customize /proc/cpuinfo',
       },
       empty: {
         title: 'No Templates Found',
@@ -501,6 +496,9 @@ export const messages = {
         new_title: 'New Template',
         delete_title: 'Delete Confirmation',
         delete_confirm: 'Are you sure to delete template "{name}"?',
+        rename_overwrite_title: 'Overwrite Existing Template',
+        rename_overwrite_confirm:
+          'Rename template "{oldName}" to "{newName}" and overwrite the existing target?',
       },
       messages: {
         name_required: 'Please enter template name',
@@ -511,18 +509,12 @@ export const messages = {
         pkg_exists: 'Package already added',
       },
       labels: {
-        mode: 'Mode',
         packages: 'Packages',
         count_suffix: 'items',
         version: 'Version',
         version_code: 'Version Code',
         author: 'Author',
         description: 'Description',
-      },
-      values: {
-        lite: 'lite (Lite)',
-        full: 'full (Full)',
-        resetprop: 'resetprop (Resetprop)',
       },
       search: {
         placeholder: 'Search by name, brand, or model',
@@ -589,6 +581,7 @@ export const messages = {
           detail_failed: 'Failed to load template detail',
           empty_content: 'Template content is empty',
           import_failed: 'Import failed',
+          rate_limited: 'API rate limit exceeded, please try again later',
         },
         messages: {
           import_success: 'Template "{name}" imported successfully',
@@ -715,24 +708,18 @@ export const messages = {
           system: 'Follow System',
           zh: 'Simplified Chinese',
           en: 'English',
+          tr: 'Türkçe',
         },
       },
       module: {
         title: 'Module Settings',
-        default_mode: {
-          label: 'Default Work Mode',
-          desc: 'Choose default work mode for module',
-          lite: 'Lite Mode (Recommended)',
-          full: 'Full Mode',
-          resetprop: 'Resetprop Mode',
-        },
         force_denylist_unmount: {
           label: 'Default Force Denylist Unmount',
           desc: 'Enable Zygisk FORCE_DENYLIST_UNMOUNT for target apps',
         },
         debug: {
           label: 'Debug Mode',
-          desc: 'Enable to see detailed logs in logcat',
+          desc: 'Enable to view log files in the log directory',
         },
       },
       tools: {
@@ -753,7 +740,6 @@ export const messages = {
         },
       },
       messages: {
-        default_mode_updated: 'Default mode updated',
         debug_enabled: 'Debug mode enabled',
         debug_disabled: 'Debug mode disabled',
         read_failed: 'Failed to read file or file is empty',
@@ -764,9 +750,404 @@ export const messages = {
       },
     },
   },
+  tr: {
+    common: {
+      cancel: 'İptal',
+      confirm: 'Onayla',
+      save: 'Kaydet',
+      delete: 'Sil',
+      edit: 'Düzenle',
+      add: 'Ekle',
+      loading: 'Yükleniyor...',
+      success: 'Başarılı',
+      failed: 'Başarısız',
+      default: 'Varsayılan',
+      enabled: 'Etkin',
+      disabled: 'Etkin Değil',
+      saved: 'Kaydedildi',
+    },
+    config: {
+      load_failed: 'Konfigürasyon yüklenirken bir hata oluştu.',
+      empty_content: 'Konfigürasyon boş, hiçbir şey yazılmadı.',
+      save_verify_failed: 'Kaydetme doğrulaması başarısız oldu.',
+      backup_used: 'Konfigürasyon yerel yedekten kurtarıldı.',
+      backup_failed: 'Yerel yedek mevcut değil, konfigürasyon yüklemesi başarısız oldu.',
+    },
+    nav: {
+      home: 'Ev',
+      templates: 'Şablonlar',
+      apps: 'Uygulamalar',
+      settings: 'Ayarlar',
+    },
+    status: {
+      title: 'Ana Sayfa',
+      items: {
+        module_status: 'Modül Bilgisi',
+        module_version: 'Modül Sürümü',
+        impersonated_apps_count: 'Taklit Edilen Uygulamalar',
+        templates_count: 'Şablon Sayısı',
+      },
+      translators: {
+        title: 'Çevirmenler',
+        action: 'Proje Çevirmenleri',
+        dialog_title: 'Çevirmenler Hakkında',
+      },
+      follow: {
+        title: 'Modülü Takip Et',
+        action: 'Proje Güncellemelerini Takip Et',
+        channels: 'Topluluklara katıl, geliştirici ile iletişime geç ve depoyu yıldızla.',
+        dialog_title: 'Modülü Takip Et',
+        module_name: 'Modül İsmi',
+        author: 'Projenin Sahibi',
+        communities: 'Topluluklar',
+        repository: 'GitHub Deposu',
+        telegram: 'Telegram Grubu',
+        qq_group: 'QQ Grubu',
+        open_link: 'Bağlantıyı Aç',
+        repository_action_primary: "GitHub'u Aç",
+        repository_action_secondary: 'Projeye Yıldız Ver',
+      },
+    },
+    templates: {
+      title: 'Cihaz Şablonları',
+      actions: {
+        online: 'Çevrimiçi Şablonlar',
+        new: 'Yeni Şablon',
+        transfer: 'İçe/Dışa Aktar',
+        export: 'Dışa Aktar',
+        add: 'Ekle',
+      },
+      fields: {
+        name: 'Şablon İsmi',
+        manufacturer: 'Üretici (Manufacturer)',
+        brand: 'Marka (Brand)',
+        model: 'Model',
+        device: 'Cihaz (Device)',
+        product: 'Ürün (Product)',
+        hardware: 'Donanım (Hardware)',
+        name_field: 'İsim',
+        market_name: 'Market İsmi',
+        fingerprint: 'Parmak İzi (Fingerprint)',
+        build_id: 'Yapı Kimiliği (Build ID)',
+        android_version: 'Android Sürümü',
+        sdk_int: 'SDK Sürümü',
+        characteristics: 'Özellikler',
+        force_denylist_unmount: 'Denylist Bağlantısını Kaldırmaya Zorla',
+        packages: 'Paketler (Opsiyonel)',
+        system: 'Sistem',
+        cpu: 'CPU Sahtekarlık',
+        cpu_spoof: 'CPU Sahtekarlık Preseti',
+        cpu_spoof_custom: 'Özel CPU Bilgisi',
+        companion_resetprop: 'Companion Resetprop',
+      },
+      placeholders: {
+        name: 'redmagic_9_pro vs.',
+        manufacturer: 'ZTE vs.',
+        brand: 'nubia vs.',
+        model: '25010PN30C, NX769J vs.',
+        device: 'xuanyuan, NX769J vs.',
+        product: 'xuanyuan, NX769J vs.',
+        hardware: 'örn. qcom, mt6989',
+        name_field: 'xuanyuan vs.',
+        market_name: 'REDMAGIC 9 Pro vs.',
+        fingerprint: 'nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys vs.',
+        build_id: 'UKQ1.230917.001 vs.',
+        android_version: '16, 15, 14 vs.',
+        sdk_int: '36, 35, 34 vs.',
+        characteristics: 'tablet vs.',
+        packages: 'Paket adını girin veya arayın',
+        cpu_spoof: 'config.toml dosyasından bir CPU preset seçin',
+        cpu_spoof_custom:
+          'Yukarıdaki preset kullanmak için boş bırakın; /proc/cpuinfo içeriğini tamamen özelleştirmek için doldurun',
+      },
+      empty: {
+        title: 'Hiç Şablon Bulunamadı',
+        hint: 'Yeni bir şablon oluşturmak için yukarıdaki düğmeye tıklayın',
+        packages:
+          'Hiçbir paket eklenmedi. Manuel olarak girin veya yüklü uygulamalar arasından seçim yapın',
+      },
+      dialog: {
+        edit_title: 'Şablonu Düzenle',
+        new_title: 'Yeni Şablon',
+        delete_title: 'Silmeyi Onayla',
+        delete_confirm: 'Bu "{name}" şablonu silmek istediğinize emin misiniz?',
+        rename_overwrite_title: 'Mevcut Şablonun Üstüne Yazılıyor',
+        rename_overwrite_confirm:
+          'Şu an "{oldName}" adlı şablonu "{newName}" olarak yeniden adlandırıp mevcut hedefin üzerine yazmak istiyor musunuz?',
+      },
+      messages: {
+        name_required: 'Lütfen şablon adını giriniz.',
+        saved: 'Şablon başarıyla kaydedildi.',
+        deleted: 'Şablon başarıyla silindi.',
+        export_copy_success: 'Şablon dışa aktarımı kopyalandı',
+        export_copy_failed: 'Kopyalama başarısız oldu, lütfen manuel olarak kopyalayın',
+        pkg_exists: 'Paket zaten eklendi',
+      },
+      labels: {
+        packages: 'Paketler',
+        count_suffix: 'Öğeler',
+        version: 'Sürüm',
+        version_code: 'Sürüm Kodu',
+        author: 'Sahip',
+        description: 'Açıklama',
+      },
+      search: {
+        placeholder: 'İsme, markaya veya modele göre arayın',
+        no_results: 'Eşleşen şablon bulunamadı.',
+      },
+      categories: {
+        all: 'Hepsi',
+        common: 'Yaygın',
+        gaming: 'Oyuncu',
+        transcend: 'Transcend',
+      },
+      online: {
+        title: 'Çevrimiçi Şablon Kütüphanesi',
+        subtitle:
+          'Önce kataloğu yükleyin, ardından önbellek yeniden kullanımı ve yeniden deneme desteğiyle tüm şablon ayrıntılarını arka planda yayınlayın.',
+        loading: 'Çevrimiçi şablonlar yükleniyor...',
+        retry: 'Tekrar Dene',
+        retry_failed: 'Tekrar Deneme Başarısız Oldu',
+        retry_detail: 'Tekrar Deneme Detayları',
+        brand: 'Marka',
+        model: 'Model',
+        market_name: 'Market İsmi',
+        importing: 'İçe aktarılıyor...',
+        import: 'İçe Aktar',
+        back: 'Şablonlara Geri Dön',
+        empty_category: 'Bu kategoride hiçbir şablon bulunamadı',
+        empty_filtered: 'Mevcut filtrelerle eşleşen şablon yok',
+        empty_library: 'Kütüphane boş. Yenileyin ve tekrar deneyin.',
+        close: 'Kapat',
+        source_button: 'Kaynak: {source}',
+        refresh: 'Listeyi Yenile',
+        search_placeholder: 'Şablon adına, markaya veya kategoriye göre arama yapın',
+        clear_filters: 'Filtreleri Temizle',
+        progress_label: 'İlerleme Detayı',
+        progress_pending: 'Başlamayı bekliyorum',
+        progress_partial: '{resolved}/{total} çözüldü, {pending} kaldı.',
+        progress_complete: '{count}/{total} yüklendi, {failed} başarısız oldu.',
+        sources: {
+          gitee: 'Gitee',
+          github: 'GitHub',
+        },
+        status: {
+          source: 'Kaynak: {source}',
+          fallback: 'Yedek kaynak kullanılıyor',
+          cached: 'Önbelleğe Alınmış Veri Kullanılıyor',
+          pending: 'Bekleniyor',
+          loading: 'Yükleniyor',
+          ready: 'Hazır',
+          failed: 'Başarısız Oldu',
+        },
+        toasts: {
+          start_loading: 'Çevrimiçi şablonlar yüklenmeye başlanıyor...',
+          fetching_list: 'Şablon listesi getiriliyor...',
+          got_templates: '{count} şablon alındı',
+          no_templates_toast:
+            'Şablon bulunamadı, muhtemelen ağ sorunu veya API kullanım sınırlaması söz konusu.',
+          list_loaded: 'Şablon listesi yüklendi, arka planda detaylar indiriliyor...',
+          content_loaded: '{count} şablon içeriği başarıyla yüklendi.',
+          content_failed: '{count} şablon içeriği yüklenemedi.',
+          load_failed: 'Yükleme başarısız oldu, hata: {error}',
+        },
+        errors: {
+          no_templates:
+            'Şablon bulunamadı, lütfen ağ bağlantınızı kontrol edin veya daha sonra tekrar deneyin.',
+          load_failed: 'Yükleme başarısız oldu',
+          detail_failed: 'Şablon detayını yükleme başarısız oldu.',
+          empty_content: 'Şablon içeriği boş.',
+          import_failed: 'İçe aktarma başarısız oldu.',
+          rate_limited: 'API istek sınırı aşıldı, lütfen daha sonra tekrar deneyin.',
+        },
+        messages: {
+          import_success: '"{name}" şablonu başarıyla içe aktarıldı.',
+          exists_confirm: '"{name}" şablonu zaten mevcut, üzerine yazılsın mı?',
+          exists_title: 'İçe Aktarma Onayı',
+          overwrite: 'Üzerine Yaz',
+        },
+      },
+      transfer: {
+        title: 'Şablonları İçe/Dışa Aktar',
+        tabs: {
+          import: 'İçe Aktar',
+          export: 'Dışa Aktar',
+          device: 'Cihazı Dışa Aktar',
+        },
+        import: {
+          input_label: 'TOML içe aktar',
+          input_hint:
+            'Tam bir config.toml dosyasını veya tek bir [templates.xxx] bölümünü destekler',
+          input_placeholder: 'TOML şablonunu buraya yapıştırın',
+          preview_label: 'İçe Aktarmayı Önizle',
+          detected: '{count} şablon algılandı',
+          empty:
+            'TOML dosyasını yapıştırdıktan sonra, içe aktarılabilecek şablon adları burada görünecektir.',
+          invalid_toml: 'Geçersiz TOML formatı',
+          no_valid_templates: 'Geçerli şablon bulunamadı',
+          overwrite_title: 'Mevcut Şablonların Üzerine Yaz',
+          overwrite_confirm:
+            '{count} adet şablon zaten mevcut ve bunların yerine yenileri yapılacak: {names}',
+          submit: 'Şablonları İçe Aktar',
+          success: '{count} tane şablon içe aktarıldı',
+        },
+        export: {
+          selection_label: 'Dışa aktarmak için şablonları seçin',
+          selection_hint: 'Bir veya daha fazla şablon seçerek TOML çıktısı oluşturun',
+          select_all: 'Hepsini Seç',
+          clear_all: 'Temizle',
+          empty: 'Dışa aktarılabilecek şablon yok.',
+          preview_label: 'Dışa Aktarma Önizlemesi',
+          selected: '{count} tane şablon seçildi',
+          empty_preview: 'Şablonları seçtikten sonra oluşturulan TOML dosyası burada görünecektir.',
+          copy: 'Dışa Aktarma Metnini Kopyala',
+          copy_success: 'Kopyalanan metni dışa aktar',
+          copy_failed: 'Kopyalama başarısız oldu, lütfen manuel kopyalayın.',
+          none_selected: 'Dışa aktarmak için en az bir şablon seçin.',
+        },
+        device: {
+          read_label: 'Mevcut cihaz özelliklerini okuyun',
+          read_hint:
+            "getprop'tan bir şablon oluşturun, ardından bunu config'e kaydedin veya TOML çıktısını kopyalayın.",
+          read: 'Cihazı Oku',
+          reading: 'Okunuyor...',
+          read_success: 'Mevcut cihaz şablonu oluşturuldu.',
+          read_failed: 'Mevcut cihaz şablınu okunamadı.',
+          template_name_label: 'Şablon İsmi',
+          template_name_placeholder: 'Şablon ismini gir',
+          template_name_required: 'Lütfen şablon adını girin',
+          preview_label: 'Dışa Aktarmayı Önizle',
+          empty_preview:
+            'Mevcut cihaz özelliklerini okuduktan sonra oluşturulan TOML burada görünecektir.',
+          copy: 'Dışa Aktarma Metnini Kopyala',
+          copy_success: 'Dışa Aktarma Metni Kopyalandı',
+          copy_failed: 'Kopyalama başarısız oldu, lütfen manuel kopyalayın.',
+          save: 'Şablon Olarak Kaydet',
+          save_success: 'Şablon Kaydedildi',
+          overwrite_title: 'Mevcut Şablonun Üzerine Yaz',
+          overwrite_confirm: '"{name}" şablonu zaten mevcut. Üzerine yazılsın mı?',
+          empty: 'Öncelikle mevcut cihaz özelliklerini okuyun.',
+        },
+      },
+    },
+    apps: {
+      title: 'Uygulama Yönetimi',
+      search_placeholder: 'Uygulama veya paket arayın',
+      actions: {
+        show_system: 'Sistem Uygulamalarını Göster',
+        hide_system: 'Sistem Uygulamalarını Gizle',
+      },
+      tabs: {
+        all: 'Hepsi',
+        configured: 'Yapılandırıldı',
+        unconfigured: 'Yapılandırılmadı',
+      },
+      status: {
+        configured: 'Yapılandırıldı',
+        unconfigured: 'Yapılandırılmadı',
+        not_installed: 'Kurulu Değil',
+      },
+      empty: {
+        search: 'Eşleşen hiçbir uygulama bulunamadı',
+        configured: 'Hiçbir uygulama yapılandırılmadı',
+        unconfigured: 'Tüm uygulamalar yapılandırıldı',
+        all: 'Hiçbir uygulama bulunamadı.',
+      },
+      dialog: {
+        config_title: "{name}'ı yapılandır",
+        mode_template: 'Şablon Yapılandırması',
+        mode_custom: 'Özel Yapılandırma',
+        mode_remove: 'Yapılandırmayı Kaldır',
+        select_template_placeholder: 'Cihaz Şablonunu Seçin',
+        search_template_placeholder: 'İsme, markaya veya modele göre arayın.',
+        search_no_result: 'Eşleşen şablon bulunamadı, başka bir anahtar kelime deneyin.',
+        no_templates: 'Henüz şablon yok, oluşturun veya içe aktarın.',
+        remove_hint:
+          'Bu uygulama için sahtekarlık yapılandırmasını kaldırmak istediğinizden emin misiniz?',
+        remove_custom_config: 'Özel Yapılandırmayı Kaldır',
+        remove_template_config: 'Şablon Yapılandırmasını Kaldır',
+      },
+      messages: {
+        select_template: 'Lütfen bir şablon seçin',
+        saved: 'Yapılandırma kaydedildi',
+        custom_config_removed: 'Özel yapılandırma kaldırıldı',
+        template_config_removed: 'Şablon yapılandırması kaldırıldı',
+      },
+    },
+    settings: {
+      display: {
+        title: 'Görüntüleme Ayarları',
+        theme: {
+          label: 'Tema',
+          desc: 'Arayüz temasını seç',
+          system: 'Sistemi Takip Et',
+          light: 'Aydınlık Tema',
+          dark: 'Karanlık Tema',
+        },
+        language: {
+          label: 'Dil',
+          desc: 'Arayüz Dilin Seç',
+          system: 'Sistemi Takip Et',
+          zh: 'Basitleştirilmiş Çince',
+          en: 'İngilizce',
+          tr: 'Türkçe',
+        },
+      },
+      module: {
+        title: 'Modül Ayarları',
+        force_denylist_unmount: {
+          label: 'Varsayılan Denylist Listesinden Çıkarma',
+          desc: 'Hedef uygulamalar için Zygisk FORCE_DENYLIST_UNMOUNT özelliğini etkinleştirin.',
+        },
+        debug: {
+          label: 'Hata Ayıklama Modu',
+          desc: 'Günlük dizinindeki günlük dosyalarını görüntülemeyi etkinleştirir.',
+        },
+      },
+      tools: {
+        title: 'Araçlar',
+        convert: {
+          label: 'Yapılandırma Dönüştürme',
+          desc: 'system.prop tabanlı spoof modülünü cihaz şablonuna dönüştürün',
+          btn: 'Dönüşümü Başlat',
+        },
+      },
+      dialog: {
+        result: {
+          title: 'Dönüşüm Sonucu',
+          template_name_label: 'Şablon Adı',
+          template_name_placeholder: 'Lütfen şablon adı giriniz',
+          preview_label: 'İçeriği Önizle',
+          btn_save: 'Şablon Olarak Kaydet',
+        },
+      },
+      messages: {
+        debug_enabled: 'Hata ayıklama modu etkinleştirildi',
+        debug_disabled: 'Hata ayıklama modu kapatıldı',
+        read_failed: 'Dosya okunamadı veya dosya boş',
+        convert_failed: 'Dönüştürme başarısız oldu',
+        save_failed: 'Kaydetme başarısız oldu',
+        save_success: 'Başarıyla kaydedildi',
+        template_saved: 'Şablon kaydedildi',
+      },
+    },
+  },
 }
 
-export type Locale = 'zh' | 'en'
+export const projectTranslators = {
+  turkish: {
+    locale_name: '🇹🇷 Türkçe',
+    full_name: 'mamii.',
+    user_name: 'mamiiblt',
+    pp_url: 'https://mamii.dev/mamiiblt.png',
+    socials: {
+      github: 'mamiiblt',
+      website: 'https://mamii.dev/about',
+    },
+  },
+}
+
+export type Locale = 'zh' | 'en' | 'tr'
 
 // Simple object path access
 function getNestedValue(obj: unknown, path: string): string {
@@ -784,7 +1165,11 @@ export function useI18n() {
   const locale = computed(() => {
     if (settingsStore.language === 'system') {
       const sysLang = navigator.language
-      return sysLang.startsWith('zh') ? 'zh' : 'en'
+
+      if (sysLang.startsWith('zh')) return 'zh'
+      if (sysLang.startsWith('tr')) return 'tr'
+
+      return 'en'
     }
     return settingsStore.language as Locale
   })

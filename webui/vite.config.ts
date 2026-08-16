@@ -24,7 +24,6 @@ export default defineConfig({
     outDir: '../module/webroot',
     emptyOutDir: true, // 清空目录，避免旧文件堆积
     assetsDir: 'assets',
-    minify: 'esbuild',
   },
   server: {
     port: 3000,

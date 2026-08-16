@@ -4,7 +4,7 @@ exclude = ["device_faker_cli"]
 
 [package]
 name = "device_faker"
-version = "1.3.5"
+version = "1.5.0"
 edition = "2024"
 authors = ["Seyud"]
 
@@ -17,7 +17,8 @@ toml = { version = "1.0", features = ["parse"] }
 zygisk-api = { git = "https://github.com/Seyud/zygisk-api-rs.git" }
 serde_json = "1.0.149"
 libc = "0.2"
-prop-rs-android = { git = "https://github.com/Kernel-SU/ksu_props.git", version = "0.1.0" }
+prop-rs-android = { git = "https://github.com/Kernel-SU/ksu_props.git", version = "0.2.0" }
+memmap2 = "0.9.11"
 
 [lib]
 name = "zygisk"
@@ -33,5 +34,3 @@ opt-level = 3
 strip = true
 codegen-units = 1
 overflow-checks = false
-
-

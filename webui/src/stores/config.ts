@@ -25,6 +25,7 @@ export const useConfigStore = defineStore('config', () => {
   const bootstrapping = ref(false)
   const configReady = ref(false)
   const moduleMetaReady = ref(false)
+  const templateOrder = ref<string[]>([])
   const { t } = useI18n()
 
   let bootstrapPromise: Promise<void> | null = null
@@ -37,6 +38,10 @@ export const useConfigStore = defineStore('config', () => {
   function loadConfigBackup(): string | null {
     if (typeof localStorage === 'undefined') return null
     return localStorage.getItem(CONFIG_BACKUP_KEY)
+  }
+
+  function rebuildTemplateOrder() {
+    templateOrder.value = Object.keys(config.value.templates || {})
   }
 
   // 加载配置文件
@@ -54,6 +59,7 @@ export const useConfigStore = defineStore('config', () => {
 
       if (content && content.trim().length > 0) {
         config.value = parseToml(content) as Config
+        rebuildTemplateOrder()
         saveConfigBackup(content)
         return
       }
@@ -62,9 +68,8 @@ export const useConfigStore = defineStore('config', () => {
       if (!exists && (!content || content.trim().length === 0)) {
         // 创建默认配置
         await mkdir('/data/adb/device_faker/config')
-        config.value = {
-          default_mode: 'lite',
-        }
+        config.value = {}
+        rebuildTemplateOrder()
         await saveConfig()
         return
       }
@@ -76,6 +81,7 @@ export const useConfigStore = defineStore('config', () => {
       if (backup) {
         try {
           config.value = parseToml(backup) as Config
+          rebuildTemplateOrder()
           error.value = null
           toast(t('config.backup_used'))
           return
@@ -96,9 +102,10 @@ export const useConfigStore = defineStore('config', () => {
     try {
       const configToSave = sanitizeConfigForSave(config.value)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const content = stringifyToml(configToSave as any)
+      let content = stringifyToml(configToSave as any)
       if (!content || content.trim().length === 0) {
-        throw new Error(t('config.empty_content'))
+        // 空配置也需保持文件非空（写后校验与下次加载都按内容非空判断），用注释占位，不写任何键
+        content = '# 空配置，全部使用模块默认值\n'
       }
 
       await writeFile(CONFIG_PATH, content)
@@ -163,6 +170,19 @@ export const useConfigStore = defineStore('config', () => {
 
   // 获取所有模板（使用 computed 缓存）
   const templates = computed(() => config.value.templates || {})
+  const templateEntries = computed(() => {
+    const names = new Set(templateOrder.value)
+    const orderedEntries = templateOrder.value.flatMap((name) => {
+      const template = templates.value[name]
+      return template ? [{ name, template }] : []
+    })
+
+    const remainingEntries = Object.entries(templates.value)
+      .filter(([name]) => !names.has(name))
+      .map(([name, template]) => ({ name, template }))
+
+    return [...orderedEntries, ...remainingEntries]
+  })
 
   // 获取所有应用配置（使用 computed 缓存）
   const apps = computed(() => config.value.apps || [])
@@ -208,6 +228,10 @@ export const useConfigStore = defineStore('config', () => {
       config.value.templates = {}
     }
 
+    if (!templateOrder.value.includes(name)) {
+      templateOrder.value.push(name)
+    }
+
     if (options?.replace) {
       config.value.templates[name] = template
       return
@@ -216,11 +240,89 @@ export const useConfigStore = defineStore('config', () => {
     config.value.templates[name] = mergeTemplateWithExisting(config.value.templates[name], template)
   }
 
+  function renameTemplate(
+    oldName: string,
+    newName: string,
+    template: Template,
+    options?: {
+      overwrite?: boolean
+    }
+  ) {
+    if (!config.value.templates) {
+      config.value.templates = {}
+    }
+
+    const sourceName = oldName.trim()
+    const targetName = newName.trim()
+
+    if (sourceName === targetName) {
+      if (!templateOrder.value.includes(targetName)) {
+        templateOrder.value.push(targetName)
+      }
+      config.value.templates[targetName] = template
+      return
+    }
+
+    if (
+      !options?.overwrite &&
+      Object.prototype.hasOwnProperty.call(config.value.templates, targetName)
+    ) {
+      throw new Error(`Template "${targetName}" already exists`)
+    }
+
+    const nextTemplates: Record<string, Template> = {}
+    let sourceFound = false
+
+    for (const [name, currentTemplate] of Object.entries(config.value.templates)) {
+      if (name === targetName) {
+        continue
+      }
+
+      if (name === sourceName) {
+        nextTemplates[targetName] = template
+        sourceFound = true
+        continue
+      }
+
+      nextTemplates[name] = currentTemplate
+    }
+
+    if (!sourceFound) {
+      nextTemplates[targetName] = template
+    }
+
+    const nextTemplateOrder: string[] = []
+    let orderSourceFound = false
+
+    for (const name of templateOrder.value) {
+      if (name === targetName) {
+        continue
+      }
+
+      if (name === sourceName) {
+        nextTemplateOrder.push(targetName)
+        orderSourceFound = true
+        continue
+      }
+
+      nextTemplateOrder.push(name)
+    }
+
+    if (!orderSourceFound) {
+      nextTemplateOrder.push(targetName)
+    }
+
+    config.value.templates = nextTemplates
+    templateOrder.value = nextTemplateOrder
+  }
+
   // 删除模板
   function deleteTemplate(name: string) {
     if (config.value.templates) {
       delete config.value.templates[name]
     }
+
+    templateOrder.value = templateOrder.value.filter((templateName) => templateName !== name)
   }
 
   // 添加或更新应用配置
@@ -313,13 +415,6 @@ export const useConfigStore = defineStore('config', () => {
     return null
   }
 
-  // 切换工作模式
-  async function toggleWorkMode() {
-    const currentMode = config.value.default_mode || 'lite'
-    config.value.default_mode = currentMode === 'lite' ? 'full' : 'lite'
-    await saveConfig()
-  }
-
   return {
     config,
     moduleVersion,
@@ -331,6 +426,7 @@ export const useConfigStore = defineStore('config', () => {
     moduleMetaReady,
     // Computed 属性（自动缓存）
     templates,
+    templateEntries,
     apps,
     deviceFakerCount,
     templateCount,
@@ -341,6 +437,7 @@ export const useConfigStore = defineStore('config', () => {
     loadModuleVersion,
     getTemplates,
     setTemplate,
+    renameTemplate,
     deleteTemplate,
     getApps,
     setApp,
@@ -348,6 +445,5 @@ export const useConfigStore = defineStore('config', () => {
     getDeviceFakerCount,
     isPackageConfigured,
     getPackageConfig,
-    toggleWorkMode,
   }
 })

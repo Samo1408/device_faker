@@ -1,4 +1,3 @@
-export type SpoofMode = 'lite' | 'full' | 'resetprop'
 export type OnlineTemplateSource = 'gitee' | 'github'
 export type OnlineTemplateLoadState = 'idle' | 'loading' | 'ready' | 'error'
 export type OnlineTemplateDetailsState = 'idle' | 'loading' | 'partial' | 'complete' | 'error'
@@ -16,6 +15,7 @@ export interface DeviceInfo {
   model?: string
   device?: string
   product?: string
+  hardware?: string
   name?: string
   marketname?: string
   fingerprint?: string
@@ -25,12 +25,14 @@ export interface DeviceInfo {
   sdk_int?: number
   custom_props?: CustomProps
   force_denylist_unmount?: boolean
+  companion_resetprop?: boolean
+  cpu_spoof?: string
+  cpu_spoof_custom?: string
 }
 
 // 机型模板接口
 export interface Template extends DeviceInfo {
   packages?: string[]
-  mode?: SpoofMode
   version?: string
   version_code?: number
   author?: string
@@ -40,7 +42,6 @@ export interface Template extends DeviceInfo {
 // 应用配置接口
 export interface AppConfig extends DeviceInfo {
   package: string
-  mode?: SpoofMode
 }
 
 export interface TemplateMeta {
@@ -105,9 +106,10 @@ export interface OnlineTemplateCacheEntry<T> {
 
 // 配置文件接口
 export interface Config {
-  default_mode?: SpoofMode
   default_force_denylist_unmount?: boolean
   debug?: boolean
+  default_cpu_spoof?: string
+  cpu_presets?: Record<string, string>
   templates?: Record<string, Template>
   apps?: AppConfig[]
 }
@@ -126,7 +128,7 @@ export interface InstalledApp {
 // 设置接口
 export interface Settings {
   theme: 'system' | 'light' | 'dark'
-  language: 'system' | 'zh' | 'en'
+  language: 'system' | 'zh' | 'en' | 'tr'
   showSystemApps: boolean
   onlineTemplateSource: OnlineTemplateSource
 }

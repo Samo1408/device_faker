@@ -1,5 +1,5 @@
 import { exec, listPackages, getPackagesInfo } from 'kernelsu-alt'
-import { normalizePackageName } from './package'
+import { normalizePackageName, parsePackageUser } from './package'
 import type { InstalledApp } from '../types'
 
 type PackageQueryType = 'user' | 'system' | 'all'
@@ -107,26 +107,6 @@ export async function writeFile(path: string, content: string): Promise<void> {
 }
 
 /**
- * 使用 WebUI-X $packageManager API 获取已安装应用列表
- */
-async function getInstalledAppsViaWebUIX(): Promise<string[]> {
-  if (typeof window.$packageManager === 'undefined') {
-    return []
-  }
-
-  try {
-    // 获取用户应用 (userId=0)
-    const packagesJson = window.$packageManager.getInstalledPackages(0, 0)
-    if (!packagesJson) return []
-
-    const packages: string[] = JSON.parse(packagesJson)
-    return packages
-  } catch {
-    return []
-  }
-}
-
-/**
  * 使用 kernelsu-alt 的 listPackages API 获取已安装应用列表
  */
 async function getInstalledAppsViaKernelSU(type: PackageQueryType): Promise<string[]> {
@@ -142,28 +122,6 @@ async function getInstalledAppsViaKernelSU(type: PackageQueryType): Promise<stri
     return await listPackages(type)
   } catch {
     return []
-  }
-}
-
-/**
- * 使用 WebUI-X $packageManager API 获取单个应用信息
- */
-function getAppInfoViaWebUIX(
-  packageName: string
-): { appName: string; versionName: string; versionCode: number } | null {
-  if (typeof window.$packageManager === 'undefined') {
-    return null
-  }
-
-  try {
-    const info = window.$packageManager.getApplicationInfo(packageName, 0, 0)
-    return {
-      appName: info.getLabel() || packageName,
-      versionName: info.getVersionName() || '',
-      versionCode: info.getVersionCode() || 0,
-    }
-  } catch {
-    return null
   }
 }
 
@@ -205,20 +163,76 @@ async function getAppInfoViaKernelSU(packageNames: string[]): Promise<{
   }
 }
 
-async function getPackageList(type: PackageQueryType): Promise<string[]> {
-  let packageList = await getInstalledAppsViaKernelSU(type)
+// 模块级缓存：设备上的全部用户 ID
+let cachedUserIds: number[] | null = null
 
-  // WebUI-X 只能获取全量列表，作为兜底方案使用
-  if (packageList.length === 0 && type === 'all' && typeof window.$packageManager !== 'undefined') {
-    packageList = await getInstalledAppsViaWebUIX()
+/**
+ * 枚举设备上所有用户 ID（经 pm list users），结果缓存。
+ * 失败或无用户时安全降级返回 [0]。
+ */
+async function getUserIds(): Promise<number[]> {
+  if (cachedUserIds !== null) {
+    return cachedUserIds
   }
 
-  if (
-    packageList.length === 0 &&
-    type === 'user' &&
-    typeof window.$packageManager !== 'undefined'
-  ) {
-    packageList = await getInstalledAppsViaWebUIX()
+  try {
+    const output = await execCommand('pm list users')
+    const ids: number[] = []
+    const regex = /UserInfo\{(\d+):/g
+    let match: RegExpExecArray | null
+    while ((match = regex.exec(output)) !== null) {
+      ids.push(Number(match[1]))
+    }
+    cachedUserIds = ids.length > 0 ? ids : [0]
+  } catch {
+    cachedUserIds = [0]
+  }
+
+  return cachedUserIds
+}
+
+/**
+ * 使用 pm list packages --user <id> 枚举指定用户的应用列表。
+ * @param type 应用类型
+ * @param userId 用户 ID
+ * @returns 包名数组；非零用户的包名追加 @userId 后缀
+ */
+async function listPackagesForUser(type: PackageQueryType, userId: number): Promise<string[]> {
+  const typeFlag = type === 'system' ? '-s' : type === 'user' ? '-3' : ''
+  const commandParts = ['pm', 'list', 'packages']
+  if (typeFlag) commandParts.push(typeFlag)
+  commandParts.push('--user', String(userId))
+
+  try {
+    const output = await execCommand(commandParts.join(' '))
+    const packages: string[] = []
+    for (const line of output.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('package:')) continue
+      const name = trimmed.slice('package:'.length)
+      if (!name) continue
+      // user 0 保持原样，非零用户追加 @userId 后缀
+      packages.push(userId === 0 ? name : `${name}@${userId}`)
+    }
+    return packages
+  } catch {
+    return []
+  }
+}
+
+async function getPackageList(type: PackageQueryType): Promise<string[]> {
+  const userIds = await getUserIds()
+
+  // user 0 走 KernelSU 原生 listPackages API
+  let packageList = await getInstalledAppsViaKernelSU(type)
+
+  // 非零用户：用 pm list packages --user <id> 枚举
+  const nonZeroUserIds = userIds.filter((id) => id !== 0)
+  if (nonZeroUserIds.length > 0) {
+    const results = await Promise.all(
+      nonZeroUserIds.map((userId) => listPackagesForUser(type, userId))
+    )
+    packageList = [...packageList, ...results.flat()]
   }
 
   return Array.from(new Set(packageList))
@@ -232,26 +246,20 @@ export async function getAppsInfo(packageNames: string[], options: GetAppsInfoOp
   }
 
   const { fallbackType, assumeInstalled = false } = options
-  const kernelSUInfo = await getAppInfoViaKernelSU(uniquePackages)
+
+  // KernelSU getPackagesInfo 无 userId 参数，但以 root 身份可解析设备级 APK；
+  // 对 @userId 包传 base 名，再用 normalizedInfo 按 base 匹配回原包名。
+  const basePackages = uniquePackages.map((pkg) => parsePackageUser(pkg).base)
+  const kernelSUInfo = await getAppInfoViaKernelSU(basePackages)
 
   return uniquePackages.map<InstalledApp>((packageName) => {
-    const normalizedPackage = normalizePackageName(packageName)
-    const hasUserSuffix = /@\d+$/.test(packageName)
+    const { base: normalizedPackage, userId } = parsePackageUser(packageName)
+    const hasUserSuffix = userId !== 0
     const exactInfo = kernelSUInfo.exactInfo.get(packageName)
     const fallbackInfo =
       !exactInfo && hasUserSuffix ? kernelSUInfo.normalizedInfo.get(normalizedPackage) : undefined
-    const exactWebUIXInfo = exactInfo ? null : getAppInfoViaWebUIX(packageName)
-    const fallbackWebUIXInfo =
-      !exactInfo && !exactWebUIXInfo && hasUserSuffix
-        ? getAppInfoViaWebUIX(normalizedPackage)
-        : null
-    const displayInfo = exactInfo || exactWebUIXInfo || fallbackInfo || fallbackWebUIXInfo
-    const appName =
-      displayInfo && 'appLabel' in displayInfo
-        ? displayInfo.appLabel || packageName
-        : displayInfo && 'appName' in displayInfo
-          ? displayInfo.appName || packageName
-          : packageName
+    const displayInfo = exactInfo || fallbackInfo
+    const appName = displayInfo?.appLabel || packageName
 
     return {
       packageName,
@@ -259,7 +267,7 @@ export async function getAppsInfo(packageNames: string[], options: GetAppsInfoOp
       icon: '',
       versionName: displayInfo?.versionName || '',
       versionCode: displayInfo?.versionCode || 0,
-      installed: assumeInstalled || Boolean(exactInfo || exactWebUIXInfo),
+      installed: assumeInstalled || Boolean(exactInfo || fallbackInfo),
       isSystem:
         exactInfo?.isSystem ??
         (fallbackType === 'system' ? true : fallbackType === 'user' ? false : undefined),

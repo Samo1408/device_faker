@@ -18,6 +18,7 @@ import { useConfigStore } from './config'
 import { useSettingsStore } from './settings'
 import {
   TEMPLATE_CATEGORIES,
+  isRateLimitError,
   loadTemplateDetails,
   loadTemplateIndex,
   type TemplateDetailLoadResult,
@@ -621,8 +622,11 @@ export const useOnlineTemplatesStore = defineStore('online-templates', () => {
           detailsStatus.value = 'complete'
         }
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : t('templates.online.errors.load_failed')
+        const message = isRateLimitError(error)
+          ? t('templates.online.errors.rate_limited')
+          : error instanceof Error
+            ? error.message
+            : t('templates.online.errors.load_failed')
 
         if (indexItems.value.length === 0) {
           indexStatus.value = 'error'

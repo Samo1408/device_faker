@@ -1,4 +1,4 @@
-**简体中文** | [English](https://github.com/Seyud/device_faker/blob/main/docs/en/README.md)
+**简体中文** | [English](https://github.com/Seyud/device_faker/blob/main/docs/en/README.md) | [Türkçe](https://github.com/Seyud/device_faker/blob/main/docs/tr/README.md)
 
 # Device Faker 📱
 
@@ -14,23 +14,24 @@
 
 ## 特性 ✨
 
-- 🎯 **精确控制**: 为每个应用单独配置设备信息
+- 🎯 **精确控制**: 为每个应用单独配置设备信息，仅对配置的应用生效，不影响其他应用
 - 📁 **模板管理**: 多机型模板，便捷应用到多包名
 - 🔄 **实时生效**: 修改配置后仅需重启应用，无需重启系统
 - 🛡️ **安全可靠**: 基于 Zygisk 框架，模块化设计
 - 📝 **简单配置**: 使用 TOML 格式配置文件，易于编辑
-- ⚡ **性能优化**: 仅对配置的应用生效，不影响其他应用
-- 🎭 **三项模式**: lite 模式（轻量隐蔽）/ full 模式（完整伪装）/ resetprop 模式（支持只读属性修改）
+- 🎭 **统一执行流**: 无需选择模式，自动调度 JNI 字段伪装、COW 属性伪造与 companion 服务
+- 🔒 **COW 属性引擎**: mmap 写时复制伪造系统属性，per-process 隔离、模块零驻留
+- 🧬 **CPU 伪装**: 按应用伪装 /proc/cpuinfo 内容
 - 🌐 **WebUI管理**: 提供图形化界面，方便配置管理
 
 ## WebUI 功能 🖥️
 
 Device Faker 提供了现代化的 Web 管理界面
 
-- 📊 **状态监控**: 实时查看模块运行状态
 - 📋 **模板管理**: 创建、编辑和删除机型模板，批量应用到多个包名
-- 📱 **应用管理**: 直观查看已安装应用及其配置状态
+- 📱 **应用管理**: 直观查看已安装应用及其配置状态，支持多用户应用显示
 - 🖋️ **配置编辑**: 图形化界面编辑应用配置，支持模板应用和自定义配置
+- 🌍 **多语言支持**: 简体中文、English、Türkçe
 
 ## 配置说明 ⚙️
 

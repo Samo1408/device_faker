@@ -1,4 +1,4 @@
-**English** | [简体中文](https://github.com/Seyud/device_faker/blob/main/docs/README.md)
+**English** | [简体中文](https://github.com/Seyud/device_faker/blob/main/docs/README.md) | [Türkçe](https://github.com/Seyud/device_faker/blob/main/docs/tr/README.md)
 
 # Device Faker 📱
 
@@ -13,23 +13,24 @@ A device model spoofing module based on Zygisk that can configure different devi
 
 ## Features ✨
 
-- 🎯 **Precise Control**: Configure device information individually for each application
+- 🎯 **Precise Control**: Configure device information individually for each application, only takes effect on configured apps
 - 📁 **Template Management**: Multiple device templates, easily apply to multiple package names
 - 🔄 **Real-time Effect**: After modifying configuration, just restart the application, no need to restart the system
 - 🛡️ **Safe and Reliable**: Based on Zygisk framework, modular design
 - 📝 **Simple Configuration**: Using TOML format configuration files, easy to edit
-- ⚡ **Performance Optimized**: Only takes effect on configured applications, does not affect other applications
-- 🎭 **Triple Mode**: lite mode (lightweight stealth) / full mode (complete spoofing) / resetprop mode (supports read-only property modification)
+- 🎭 **Unified Execution Flow**: No mode selection needed, automatically schedules JNI field spoofing, COW property spoofing and companion services
+- 🔒 **COW Property Engine**: mmap copy-on-write property spoofing, per-process isolation with zero residency
+- 🧬 **CPU Camouflage**: Per-app /proc/cpuinfo spoofing
 - 🌐 **WebUI Management**: Provides graphical interface for convenient configuration management
 
 ## WebUI Features 🖥️
 
 Device Faker provides a modern web management interface.
 
-- 📊 **Status Monitoring**: View module running status in real-time
 - 📋 **Template Management**: Create, edit and delete device templates, batch apply to multiple package names
-- 📱 **Application Management**: Intuitive view of installed applications and their configuration status
+- 📱 **Application Management**: Intuitive view of installed applications and their configuration status, supports multi-user apps display
 - 🖋️ **Configuration Editing**: Graphical interface for editing application configuration, supporting template application and custom configuration
+- 🌍 **Multilingual**: 简体中文, English, Türkçe
 
 ## Configuration Guide ⚙️
 

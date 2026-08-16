@@ -1,57 +1,41 @@
 # 配置说明
 
+为不同的应用配置不同的伪装机型与系统属性。配置文件使用 TOML 格式。
+
 ## 配置文件路径
+
 - `/data/adb/device_faker/config/config.toml`
 
-配置文件使用 TOML 格式
+配置为**热加载**：模块在每次应用启动时重新读取配置文件。修改配置后只需重启目标应用，**无需重启系统**。
+
+- 配置文件缺失或解析失败时，该应用跳过伪装并卸载模块，不影响其他应用
+- 未出现在任何配置中的应用不做任何伪装
 
 ## 全局设置
 
-### default_mode（全局默认模式）
-
 ```toml
-default_mode = "lite"  # 推荐：轻量模式（隐藏性更好）
-```
-
-**可选值**：
-- `"lite"` - 轻量模式（推荐）⭐
-  - 只修改 Build 类静态字段
-  - 完成后卸载模块
-  - 不易被检测
-  - 适合 90% 的应用
-
-- `"full"` - 完整模式
-  - 修改 Build 类 + 伪装 SystemProperties
-  - 模块驻留内存
-  - 可能被检测
-  - 仅在 lite 不够用时使用
-
-- `"resetprop"` - Resetprop 模式
-  - 使用 resetprop 工具修改属性
-  - 支持修改只读属性
-  - 支持自定义属性和属性置空/删除
-  - 在应用进入 resetprop 模式前会用 `getprop` 备份原始值，退出或切换到其它应用后由守护进程用 resetprop 自动还原
-
-### default_force_denylist_unmount（全局默认卸载挂载点）
-
-```toml
-# 默认 false：仅在需要的应用上开启
+debug = false                        # 调试日志（默认关闭）
 default_force_denylist_unmount = false
+default_cpu_spoof = "kirin_9030pro"  # 模板/应用未指定 cpu_spoof 时的兜底预设
 ```
 
-**说明**：为目标应用启用 Zygisk 的 `FORCE_DENYLIST_UNMOUNT`，强制卸载模块挂载痕迹。可在全局开启，也可在模板 / 单个应用里覆盖。
+- `debug`：启用后输出 Info 级别日志（关闭时仅 Error），写入 `/data/adb/device_faker/logs/device_faker.log`；正常使用建议关闭以提高隐蔽性
+- `default_force_denylist_unmount`：为目标应用启用 Zygisk 的 `FORCE_DENYLIST_UNMOUNT`，可在模板/应用里用 `force_denylist_unmount` 覆盖
+- `default_cpu_spoof`：CPU 伪装预设名，模板/应用未指定 `cpu_spoof` 时回落到该预设
 
-### debug（调试模式）
+### cpu_presets
+
+`[cpu_presets]` 定义命名预设，值为完整的 `/proc/cpuinfo` 内容（TOML 多行字符串，示例省略了中间行）：
 
 ```toml
-debug = true  # 启用详细日志（用于调试）
-# debug = false  # 或删除此行，默认关闭（正常使用）
+[cpu_presets]
+kirin_9030pro = """Processor       : AArch64 Processor rev 0 (aarch64)
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32
+...
+Hardware        : HiSilicon Kirin 9030 Pro"""
 ```
 
-**说明**：
-- 启用后会输出详细的 Info 级别日志
-- 关闭时只输出 Error 级别日志
-- 正常使用建议关闭以提高隐蔽性
+在模板或 `[[apps]]` 中用 `cpu_spoof = "预设名"` 引用，详见 [CPU 伪装](#cpu-伪装)。
 
 ## 编辑配置
 
@@ -66,14 +50,12 @@ debug = true  # 启用详细日志（用于调试）
 在模板中定义 `packages` 列表，自动应用到所有包名：
 
 ```toml
-# 定义模板并列出包名
 [templates.redmagic_9_pro]
 packages = [
     "com.mobilelegends.mi",
   # 仅对 userId=999 生效
   # "com.mobilelegends.mi@999",
     "com.supercell.brawlstars",
-    "com.blizzard.diablo.immortal",
 ]
 manufacturer = "ZTE"
 brand = "nubia"
@@ -81,18 +63,6 @@ model = "NX769J"
 device = "REDMAGIC 9 Pro"
 fingerprint = "nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys"
 build_id = "UKQ1.230917.001"
-
-[templates.pixel_xl]
-packages = [
-    "com.google.android.apps.photos",
-]
-manufacturer = "Google"
-brand = "google"
-model = "marlin"
-device = "Pixel XL"
-product = "marlin"
-fingerprint = "google/marlin/marlin:10/QP1A.191005.007.A3/5972272:user/release-keys"
-build_id = "QP1A.191005.007.A3"
 
 # 无需写 [[apps]]，所有包名自动使用该模板
 ```
@@ -104,7 +74,7 @@ build_id = "QP1A.191005.007.A3"
 
 ### 方式二：直接配置
 
-使用 [[apps]] 为单个应用指定设备信息：
+使用 `[[apps]]` 为单个应用指定设备信息：
 
 ```toml
 [[apps]]
@@ -114,226 +84,177 @@ brand = "Xiaomi"
 model = "2509FPN0BC"
 device = "Xiaomi 15 Pro"
 product = "popsicle"
-name = "popsicle"  # 产品内部名称（仅 full 模式生效）
-mode = "full"  # 可选：覆盖全局模式
-
-[[apps]]
-package = "com.coolapk.market"
-manufacturer = "Nothing"
-brand = "Nothing"
-marketname = "Nothing Phone (3)"
-model = "A024"
+name = "popsicle"
 ```
 
-**优点**：
-- ✅ 配置灵活
-- ✅ 适合一次性配置或覆盖模板
+**注意**：`package` 是唯一**必填**字段，缺失会导致整个配置解析失败。
 
-**覆盖模板**：
-如果一个包名既在模板的 `packages` 中，又有 [[apps]] 配置，则 [[apps]] 优先：
+### 优先级
+
+```
+[[apps]] 直接配置 > 模板 packages 列表 > 全局默认值
+```
+
+- **`[[apps]]` 是整记录匹配**：一旦包名命中 `[[apps]]`，该条记录**整体取代**模板——记录中未设置的字段**不会**回落模板，只套用全局默认值
+- 未命中 `[[apps]]` 时，在模板的 `packages` 列表中查找
+- 最终套用全局默认值：`force_denylist_unmount` ← `default_force_denylist_unmount`，CPU 预设 ← `default_cpu_spoof`
+- 未匹配任何配置的应用：不做伪装并卸载模块
+
+**覆盖模板示例**：
 
 ```toml
 [templates.redmagic_9_pro]
-packages = [
-    "com.mobilelegends.mi",  # 默认使用这个模板
-]
+packages = ["com.mobilelegends.mi"]  # 默认使用这个模板
 manufacturer = "ZTE"
-model = "NX769J"
+brand = "nubia"
 
 [[apps]]
-package = "com.mobilelegends.mi"  # 覆盖模板配置
+package = "com.mobilelegends.mi"  # 命中后整记录取代模板
 manufacturer = "Samsung"
-model = "SM-S9280"
+# 模板中设置了但这里未写的字段（如 brand）不会生效
 ```
 
-**字段优先级**：
-```
-[[apps]] 直接配置 > 模板 packages 列表 > 全局 default_mode
-```
+## 字段说明
 
-**模式优先级**：
-```
-[[apps]].mode > [templates].mode > 全局 default_mode
-```
+### 设备信息字段
 
-### 应用配置字段说明
+以下字段可在模板或 `[[apps]]` 中使用。每个字段同时驱动 `android.os.Build` 静态字段（JNI 覆写，仅在应用进程内生效）和对应的系统属性（供 native 层 `__system_property_get` 等读取）：
 
-**字段与系统属性映射关系**:
-| 字段 | lite 模式 | full 模式 (SystemProperties) | 说明 |
-|------|----------|------------------------------|------|
-| `manufacturer` | `Build.MANUFACTURER` | + `ro.product.manufacturer` | 厂商 (如: Xiaomi, Samsung) |
-| `brand` | `Build.BRAND` | + `ro.product.brand` | 品牌 (如: Redmi, nubia) |
-| `model` | `Build.MODEL` | + `ro.product.model` | 序号 (如: 25010PN30C，NX769J) |
-| `device` | `Build.DEVICE` | (仅 Build 字段) | 代号 (如: xuanyuan，NX769J) |
-| `product` | `Build.PRODUCT` | (仅 Build 字段) | 代号 (如: xuanyuan，NX769J) |
-| `fingerprint` | `Build.FINGERPRINT` | + `ro.build.fingerprint` | 指纹 |
-| `build_id` | `Build.ID` | + `ro.build.id` 等 | Build ID (如: UKQ1.230917.001) |
-| `name` | ❌ | `ro.product.name` + `ro.product.device` | 代号 (如: xuanyuan) |
-| `marketname` | ❌ | `ro.product.marketname` | 型号 (如: REDMI K90 Pro Max) |
-| `characteristics` | ❌ | `ro.build.characteristics` | 特性 (如: tablet) - 仅 full 模式生效 |
-| `android_version` | `Build.VERSION.RELEASE` | + `ro.build.version.release` 等 | Android 版本号 (如: 15, 14) |
-| `sdk_int` | `Build.VERSION.SDK_INT` | + `ro.build.version.sdk` 等 | SDK 版本号 (如: 35, 34) |
-| `custom_props` | ❌ | ✅ | 自定义属性映射表 |
-| `force_denylist_unmount` | N/A | N/A | 是否对该应用强制卸载模块挂载点；未指定时使用 `default_force_denylist_unmount` |
+| 字段 | Build 字段 | 系统属性 | 说明 |
+|------|-----------|----------|------|
+| `manufacturer` | `Build.MANUFACTURER` | `ro.product.manufacturer` 及分区变体 | 厂商 (如: Xiaomi, Samsung) |
+| `brand` | `Build.BRAND` | `ro.product.brand` 及分区变体 | 品牌 (如: Redmi, nubia) |
+| `marketname` | —（仅属性） | `ro.product.marketname` + `ro.vendor.oplus.market.name` | 市场名 (如: Nothing Phone (3))；OnePlus/OPPO 设备读取后者 |
+| `model` | `Build.MODEL` | `ro.product.model` 及分区变体 | 型号 (如: NX769J, SM-S9280) |
+| `name` | —（仅属性） | `ro.product.name` 及分区变体 | 产品内部名 (如: popsicle) |
+| `device` | `Build.DEVICE` | `ro.product.device` 及分区变体 | 代号 (如: xuanyuan)；未设置时自动使用 `name` 的值 |
+| `product` | `Build.PRODUCT` | —（无系统属性） | 代号 (如: xuanyuan)，仅覆写 Build 字段 |
+| `hardware` | `Build.HARDWARE` | `ro.hardware` | 硬件名 (如: qcom)，无分区变体 |
+| `fingerprint` | `Build.FINGERPRINT` | `ro.build.fingerprint` | 指纹 |
+| `build_id` | `Build.ID` | `ro.build.id`、`ro.system.build.id`、`ro.vendor.build.id`、`ro.product.build.id` | Build ID (如: UKQ1.230917.001) |
+| `characteristics` | —（仅属性） | `ro.build.characteristics` | 特性 (如: tablet) |
 
-**Android 版本伪装字段**:
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| `android_version` | Android 版本号，所有模式都支持 | `"15"`, `"14"`, `"13"` |
-| `sdk_int` | SDK 版本号，所有模式都支持 | `35`, `34`, `33` |
+> **「分区变体」**指 `ro.product.{odm,vendor,system,system_ext,product,bootimage}.<字段>` 共 6 个属性。bionic 的属性读取按前缀路由到不同分区属性区，OnePlus/OPPO 等设备会读取这些变体，统一写入可保证各设备读取一致。
 
-**自定义属性字段**:
-| 字段 | 说明 |
-|------|------|
-| `custom_props` | 自定义属性映射表，仅 full/resetprop 模式支持 |
+### Android 版本伪装
 
-**配置元数据字段**（仅用于显示，不影响伪装效果）:
-| 字段 | 说明 |
-|------|------|
-| `version` | 配置版本号 (如: "v1.0") |
-| `version_code` | 配置版本码 (如: 20251212) |
-| `author` | 配置作者 |
-| `description` | 配置描述信息 |
+| 字段 | Build 字段 | 系统属性 | 示例 |
+|------|-----------|----------|------|
+| `android_version` | `Build.VERSION.RELEASE` | `ro.build.version.release`、`ro.system.build.version.release`、`ro.vendor.build.version.release`、`ro.product.build.version.release` | `"15"`, `"14"`, `"13"` |
+| `sdk_int` | `Build.VERSION.SDK_INT`（整数） | `ro.build.version.sdk`、`ro.system.build.version.sdk`、`ro.vendor.build.version.sdk`、`ro.product.build.version.sdk` | `35`, `34`, `33` |
 
-**关于 `force_denylist_unmount`**：
-- 可写在全局（`default_force_denylist_unmount`）、模板或单个 `[[apps]]`。
-- 优先级：单个应用 > 模板 > 全局默认。
-- 适合微信等敏感 App，建议按需开启而非全局强开。
+### 自定义属性
 
-**注意**:
-- 除了 `package` 外,所有字段都是可选的
-- 使用模板的 `packages` 时,无需写 [[apps]](自动应用)
-- [[apps]] 中的字段会覆盖模板的配置
-- `name` 和 `marketname` 仅在 **full 模式**下有效(影响 SystemProperties)
-- `name` 字段在 full 模式下会同时伪装 `ro.product.name` 和 `ro.product.device`
-- `characteristics` 字段仅在 **full 模式**下生效
-- **lite 模式**下,只有 `manufacturer`、`brand`、`model`、`device`、`product`、`fingerprint`、`build_id`、`android_version`、`sdk_int` 生效
-
-## Build ID 伪装
-
-**Build ID 会修改的属性**：
-
-| 模式 | Build 字段 | 系统属性 |
-|------|-----------|----------|
-| lite | `ID` | ❌ |
-| full | `ID` | `ro.build.id`, `ro.system.build.id`, `ro.vendor.build.id`, `ro.product.build.id` |
-| resetprop | `ID` | `ro.build.id`, `ro.system.build.id`, `ro.vendor.build.id`, `ro.product.build.id` |
-
-## Android 版本伪装
-
-```toml
-# 模板示例：伪装为 Android 15
-[templates.android_15]
-packages = ["com.app.needs.android15"]
-manufacturer = "Google"
-brand = "google"
-model = "Pixel 9 Pro"
-android_version = "15"
-sdk_int = 35
-
-# 应用示例：伪装为旧版 Android
-[[apps]]
-package = "com.needs.old.android"
-mode = "lite"  # lite 模式也支持！
-android_version = "13"
-sdk_int = 33
-```
-
-**版本伪装会修改的属性**：
-
-| 模式 | Build.VERSION 字段 | 系统属性 |
-|------|-------------------|----------|
-| lite | `RELEASE`, `SDK_INT` | ❌ |
-| full | `RELEASE`, `SDK_INT` | `ro.build.version.release`, `ro.build.version.sdk` 等 |
-| resetprop | `RELEASE`, `SDK_INT` | `ro.build.version.release`, `ro.build.version.sdk` 等 |
-
-**完整的系统属性列表**（full/resetprop 模式）：
-- `ro.build.version.release`
-- `ro.system.build.version.release`
-- `ro.vendor.build.version.release`
-- `ro.product.build.version.release`
-- `ro.build.version.sdk`
-- `ro.system.build.version.sdk`
-- `ro.vendor.build.version.sdk`
-- `ro.product.build.version.sdk`
-
-## 自定义属性
-
-**full/resetprop 模式** 都支持自定义属性，可以设置任意系统属性：
+`custom_props` 可设置任意系统属性（直接写入，无分区变体展开），支持在模板与 `[[apps]]` 中使用，也支持[特殊标记值](#特殊标记值)：
 
 ```toml
 [[apps]]
 package = "com.custom.app"
-mode = "resetprop"
 manufacturer = "Custom"
 
-# 自定义属性
 [apps.custom_props]
 "ro.custom.property" = "custom_value"
-"ro.another.prop" = "another_value"
+"ro.debug.mode" = "__DELETE__"    # 删除该属性
+"ro.empty.value" = "__EMPTY__"    # 设为空字符串
 ```
 
 ### 特殊标记值
 
-支持使用特殊标记值来执行特殊操作：
+| 标记值 | 含义 |
+|--------|------|
+| 普通字符串 | 设置为该值 |
+| `""` | 设置为空字符串（等价于 `__EMPTY__`） |
+| `"__EMPTY__"` | 设置为空字符串 |
+| `"__DELETE__"` | 删除该属性（经 companion resetprop） |
 
-| 标记值 | 含义 | 示例 |
-|--------|------|------|
-| 普通字符串 | 设置为该值 | `"ro.prop" = "value"` |
-| `""` 或省略 | 不修改（保持原值） | `brand = ""` |
-| `"__EMPTY__"` | 设置为空字符串 | `brand = "__EMPTY__"` |
-| `"__DELETE__"` | 删除该属性 | `model = "__DELETE__"` |
+> ⚠️ **结构化字段（如 `brand`、`model`）中的标记值行为不同**：`__DELETE__` 会触发对应属性删除，但字面量 `__DELETE__` 仍会同时写入属性和 Build 字段；`__EMPTY__` 则完全按字面值写入。**建议只在 `custom_props` 中使用标记值**；结构化字段留空（`""` 或省略）即为不修改。
 
-**示例**：
+### 功能开关
 
-```toml
-[[apps]]
-package = "com.example.app"
-mode = "resetprop"
-manufacturer = "Google"
-brand = "__EMPTY__"           # 将 brand 设置为空字符串
-model = "__DELETE__"          # 删除 model 属性
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `companion_resetprop` | `false` | `true` 时跳过 COW，所有属性交给 companion 进程 `resetprop` 写入（直写属性区，绕过 property_service），全系统读取一致；`false`（默认）时 COW 优先，仅影响当前进程内存。详见 [属性伪造机制](#属性伪造机制) |
+| `force_denylist_unmount` | 继承 `default_force_denylist_unmount` | 对该应用强制启用 Zygisk `FORCE_DENYLIST_UNMOUNT`；优先级：应用 > 模板 > 全局默认 |
+| `cpu_spoof` | — | CPU 伪装预设名，引用 `[cpu_presets]`，详见 [CPU 伪装](#cpu-伪装) |
+| `cpu_spoof_custom` | — | 直接指定 `/proc/cpuinfo` 内容，优先级高于 `cpu_spoof` |
 
-# 自定义属性也支持特殊标记
-[apps.custom_props]
-"ro.custom.flag" = "enabled"
-"ro.debug.mode" = "__DELETE__"
-"ro.empty.value" = "__EMPTY__"
+**注意**：
+- 除 `package` 外所有字段均为可选
+- 使用模板的 `packages` 时无需写 `[[apps]]`（自动应用）
+- `[[apps]]` 中的字段整记录取代模板，未设置字段不回落（见[优先级](#优先级)）
+- 不在上表中的字段会被静默忽略（不影响解析）
+
+## CPU 伪装
+
+通过 companion 进程把伪造的 `/proc/cpuinfo` 内容 bind mount 到目标应用的挂载命名空间：
+
+- KernelSU 会在挂载后 25–100ms 再执行 `setns` 切换命名空间，模块通过 timerfd 检测并自动重新挂载
+- 应用退出后自动卸载，不影响其他应用
+- 未配置 `cpu_spoof` 的应用启动时会主动清理可能泄漏到其命名空间的 `/proc/cpuinfo` 挂载（无伪装活跃时开销仅约 13μs）
+- 内容来源优先级：`cpu_spoof_custom` > `cpu_spoof` 预设名 > 全局 `default_cpu_spoof` > 在 `[cpu_presets]` 中查找；预设不存在则不做 CPU 伪装
+
+## 属性伪造机制
+
+所有应用统一走同一执行流（无需选择模式）：
+
+```
+① JNI 覆写 Build 静态字段 → ② COW 或 companion resetprop → ③ CPU 伪装 → ④ DlClose 卸载模块
 ```
 
-## 模式对比
+- **COW（默认）**：通过 mmap COW 重映射属性区文件，直接覆写属性内存，覆盖 `__system_property_get` / `__system_property_read_callback` 的 native 读取；无 GOT/PLT 修改；**只影响当前进程**的内存映射；模块写完立即 DlClose，零驻留
+- **companion resetprop（`companion_resetprop = true`）**：全部属性经 companion 进程直写属性区（`skip_svc`，绕过 property_service），**全系统读取一致**；应用退出或退后台约 2 秒后自动恢复原始值，回到前台重新应用
 
-| 特性 | lite 模式 ⭐ | full 模式 | resetprop 模式 |
-|------|-------------|-----------|----------------|
-| Build 类伪装 | ✅ | ✅ | ✅ |
-| SystemProperties 伪装 | ❌ | ✅ | ✅ |
-| characteristics 伪装 | ❌ | ✅ | ❌ |
-| 只读属性修改 | ❌ | ❌ | ✅ |
-| 自定义属性 | ❌ | ✅ | ✅ |
-| 属性置空/删除 | ❌ | ✅ | ✅ |
-| Android 版本伪装 | ✅ | ✅ | ✅ |
-| SDK 版本伪装 | ✅ | ✅ | ✅ |
-| 模块可卸载 | ✅ | ❌ | ❌ |
-| 隐蔽性 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
-| 被检测风险 | 极低 | 较低 | 较低 |
-| 推荐度 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
+## 完整配置示例
 
-## 如何选择模式？
+```toml
+# ── 全局设置 ──────────────────────────────────────────────
+debug = false                        # 调试日志（默认关闭）
+default_force_denylist_unmount = false
+default_cpu_spoof = "kirin_9030pro"  # 全局默认 CPU 预设
 
-### 判断依据
+# ── CPU 伪装预设表 ────────────────────────────────────────
+[cpu_presets]
+kirin_9030pro = """Processor       : AArch64 Processor rev 0 (aarch64)
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32
+...
+Hardware        : HiSilicon Kirin 9030 Pro"""
 
-**使用 lite 模式**：
-- ✅ 大多数应用
-- ✅ 追求隐蔽性
-- ✅ 不想被检测
+# ── 机型模板 ──────────────────────────────────────────────
+[templates.redmagic_9_pro]
+packages = [
+    "com.mobilelegends.mi",
+  # 仅对 userId=999 生效
+  # "com.mobilelegends.mi@999",
+    "com.supercell.brawlstars",
+]
+manufacturer = "Nubia"
+brand = "REDMAGIC"
+model = "NX809J"
+device = "REDMAGIC 11 PRO"
+product = "NX809J"
+fingerprint = "REDMAGIC/NX809J-UN/NX809J:16/BP2A.250605.031.A3/20251017.000000:user/release-keys"
+build_id = "BP2A.250605.031.A3"
+cpu_spoof = "kirin_9030pro"  # 模板内所有包名启用 CPU 伪装
 
-**使用 full 模式**：
-- 应用会读取 SystemProperties
-- lite 模式下仍能检测到真实机型
-- 需要伪装 characteristics（如 QQ 平板模式）
-- 需要自定义属性
+# ── 直接配置 ──────────────────────────────────────────────
+[[apps]]
+package = "com.omarea.vtools"
+manufacturer = "Xiaomi"
+brand = "Xiaomi"
+model = "2509FPN0BC"
+device = "Xiaomi 15 Pro"
+product = "popsicle"
+name = "popsicle"
+android_version = "15"
+sdk_int = 35
+force_denylist_unmount = true  # 覆盖全局默认，仅对该应用启用
 
-**使用 resetprop 模式**：
-- 需要修改只读属性
-- 需要删除或置空某些属性
-- 需要完整的自定义属性支持
+[[apps]]
+package = "com.example.detected.app"
+companion_resetprop = true     # 全系统属性一致（应用退出后自动恢复）
+manufacturer = "Custom"
+
+[apps.custom_props]
+"ro.custom.property" = "custom_value"
+"ro.debug.mode" = "__DELETE__"
+```

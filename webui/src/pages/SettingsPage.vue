@@ -34,6 +34,7 @@
           <el-option :label="t('settings.display.language.system')" value="system" />
           <el-option :label="t('settings.display.language.zh')" value="zh" />
           <el-option :label="t('settings.display.language.en')" value="en" />
+          <el-option :label="t('settings.display.language.tr')" value="tr" />
         </el-select>
       </div>
     </div>
@@ -59,51 +60,6 @@
 
     <div class="settings-section glass-effect">
       <h2 class="section-title">{{ t('settings.module.title') }}</h2>
-
-      <div class="setting-item">
-        <div class="setting-info">
-          <div class="setting-icon">
-            <Settings :size="24" />
-          </div>
-          <div class="setting-text">
-            <h3 class="setting-name">{{ t('settings.module.default_mode.label') }}</h3>
-            <p class="setting-desc">{{ t('settings.module.default_mode.desc') }}</p>
-          </div>
-        </div>
-        <el-select v-model="defaultMode" class="setting-control" @change="onModeChange">
-          <el-option :label="t('settings.module.default_mode.lite')" value="lite" />
-          <el-option :label="t('settings.module.default_mode.full')" value="full" />
-          <el-option :label="t('settings.module.default_mode.resetprop')" value="resetprop" />
-        </el-select>
-      </div>
-
-      <div class="setting-item">
-        <div class="setting-info">
-          <div class="setting-icon">
-            <Shield :size="24" />
-          </div>
-          <div class="setting-text">
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                margin-bottom: 0.25rem;
-              "
-            >
-              <h3 class="setting-name" style="margin-bottom: 0; white-space: normal">
-                {{ t('settings.module.force_denylist_unmount.label') }}
-              </h3>
-              <el-switch
-                v-model="defaultForceDenylistUnmount"
-                class="setting-control-switch"
-                @change="onForceDenylistUnmountChange"
-              />
-            </div>
-            <p class="setting-desc">{{ t('settings.module.force_denylist_unmount.desc') }}</p>
-          </div>
-        </div>
-      </div>
 
       <div class="setting-item setting-item-horizontal">
         <div class="setting-info">
@@ -158,7 +114,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onActivated } from 'vue'
-import { Moon, Globe, Settings, Bug, FileUp, Shield } from 'lucide-vue-next'
+import { Moon, Globe, Bug, FileUp } from 'lucide-vue-next'
 import { useConfigStore } from '../stores/config'
 import { useSettingsStore } from '../stores/settings'
 import { execCommand, readFile } from '../utils/ksu'
@@ -179,8 +135,6 @@ const { t } = useI18n()
 
 const currentTheme = ref(settingsStore.theme)
 const currentLanguage = ref(settingsStore.language)
-const defaultMode = ref(configStore.config.default_mode || 'lite')
-const defaultForceDenylistUnmount = ref(configStore.config.default_force_denylist_unmount || false)
 const debugMode = ref(configStore.config.debug || false)
 
 const convertDialogVisible = ref(false)
@@ -194,27 +148,7 @@ function onThemeChange(value: string) {
 }
 
 function onLanguageChange(value: string) {
-  settingsStore.setLanguage(value as 'system' | 'zh' | 'en')
-}
-
-async function onModeChange(value: string) {
-  configStore.config.default_mode = value as 'lite' | 'full' | 'resetprop'
-  try {
-    await configStore.saveConfig()
-    toast(t('settings.messages.default_mode_updated'))
-  } catch {
-    toast(t('settings.messages.save_failed'))
-  }
-}
-
-async function onForceDenylistUnmountChange(value: boolean) {
-  configStore.config.default_force_denylist_unmount = value
-  try {
-    await configStore.saveConfig()
-    toast(t('common.saved'))
-  } catch {
-    toast(t('settings.messages.save_failed'))
-  }
+  settingsStore.setLanguage(value as 'system' | 'zh' | 'en' | 'tr')
 }
 
 async function onDebugChange(value: boolean) {
@@ -312,25 +246,6 @@ async function saveConvertedTemplate() {
 
 // 监听配置变化（只创建一次监听器）
 watch(
-  () => configStore.config.default_mode,
-  (newMode: 'lite' | 'full' | 'resetprop' | undefined) => {
-    if (newMode && defaultMode.value !== newMode) {
-      defaultMode.value = newMode
-    }
-  }
-)
-
-watch(
-  () => configStore.config.default_force_denylist_unmount,
-  (newValue: boolean | undefined) => {
-    const val = newValue || false
-    if (defaultForceDenylistUnmount.value !== val) {
-      defaultForceDenylistUnmount.value = val
-    }
-  }
-)
-
-watch(
   () => configStore.config.debug,
   (newDebug: boolean | undefined) => {
     const newValue = newDebug || false
@@ -344,8 +259,6 @@ watch(
 onActivated(() => {
   currentTheme.value = settingsStore.theme
   currentLanguage.value = settingsStore.language
-  defaultMode.value = configStore.config.default_mode || 'lite'
-  defaultForceDenylistUnmount.value = configStore.config.default_force_denylist_unmount || false
   debugMode.value = configStore.config.debug || false
 })
 </script>
@@ -484,7 +397,6 @@ onActivated(() => {
   flex-direction: column;
   background: rgba(255, 255, 255, 0.15) !important;
   backdrop-filter: blur(40px) saturate(150%) brightness(1.1);
-  -webkit-backdrop-filter: blur(40px) saturate(150%) brightness(1.1);
   border: 1px solid rgba(255, 255, 255, 0.4);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
 }
@@ -493,7 +405,6 @@ onActivated(() => {
   .template-dialog :deep(.el-dialog) {
     background: rgba(20, 20, 20, 0.6) !important;
     backdrop-filter: blur(40px) saturate(150%) brightness(0.9);
-    -webkit-backdrop-filter: blur(40px) saturate(150%) brightness(0.9);
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   }
@@ -516,7 +427,6 @@ onActivated(() => {
 .template-dialog :deep(.el-dialog__header) {
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
@@ -532,7 +442,6 @@ onActivated(() => {
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   flex-shrink: 0;
 }
 
@@ -546,14 +455,12 @@ onActivated(() => {
 .template-dialog :deep(.el-overlay) {
   z-index: 2000 !important;
   backdrop-filter: blur(12px) saturate(120%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(120%) !important;
   background-color: rgba(0, 0, 0, 0.25) !important;
 }
 
 @media (prefers-color-scheme: dark) {
   .template-dialog :deep(.el-overlay) {
     backdrop-filter: blur(12px) saturate(120%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(120%) !important;
     background-color: rgba(0, 0, 0, 0.4) !important;
   }
 }

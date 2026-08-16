@@ -172,17 +172,17 @@ fn zip_entry_modified_time(entry_path: &Path, local_offset: UtcOffset) -> Option
 }
 
 fn check(release: bool, verbose: bool) -> Result<()> {
-    let mut cargo = cargo_ndk();
+    // check 不需要链接，因此不需要 cargo-ndk 设置的 Android linker。
+    // 同时避免与 -Z build-std 冲突导致 duplicate core lang item。
+    let mut cargo = Command::new("cargo");
     cargo.args([
+        "+nightly",
         "check",
         "--target",
         "aarch64-linux-android",
         "-Z",
-        "build-std",
-        "-Z",
         "trim-paths",
     ]);
-    cargo.env("RUSTFLAGS", "-C default-linker-libraries");
 
     if release {
         cargo.arg("--release");

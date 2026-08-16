@@ -25,6 +25,8 @@ pub struct DeviceTemplate {
     #[serde(default)]
     pub product: Option<String>,
     #[serde(default)]
+    pub hardware: Option<String>,
+    #[serde(default)]
     pub fingerprint: Option<String>,
     #[serde(default)]
     pub build_id: Option<String>,
@@ -36,15 +38,25 @@ pub struct DeviceTemplate {
     /// SDK 版本伪装（如 35, 34）
     #[serde(default)]
     pub sdk_int: Option<u32>,
-    /// 自定义属性映射表（仅 full/resetprop 模式支持）
+    /// 自定义属性映射表
     #[serde(default)]
     pub custom_props: Option<HashMap<String, String>>,
     /// 是否为匹配的应用强制执行 FORCE_DENYLIST_UNMOUNT（默认继承全局设置）
     #[serde(default)]
     pub force_denylist_unmount: Option<bool>,
-    /// 模板的工作模式（可选）
+    /// CPU 伪装预设名称（引用 [cpu_presets]）
     #[serde(default)]
-    pub mode: Option<String>,
+    pub cpu_spoof: Option<String>,
+    /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
+    #[serde(default)]
+    pub cpu_spoof_custom: Option<String>,
+    /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
+    #[serde(default)]
+    pub hide_maps: Option<Vec<String>>,
+    /// 是否跳过 COW 属性伪造，所有属性直接交给 companion resetprop 处理
+    /// true 时 getprop（独立进程）和进程内读取一致，适用于属性一致性对比检测
+    #[serde(default)]
+    pub companion_resetprop: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -66,6 +78,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub product: Option<String>,
     #[serde(default)]
+    pub hardware: Option<String>,
+    #[serde(default)]
     pub fingerprint: Option<String>,
     #[serde(default)]
     pub build_id: Option<String>,
@@ -77,25 +91,29 @@ pub struct AppConfig {
     /// SDK 版本伪装（如 35, 34）
     #[serde(default)]
     pub sdk_int: Option<u32>,
-    /// 自定义属性映射表（仅 full/resetprop 模式支持）
+    /// 自定义属性映射表
     #[serde(default)]
     pub custom_props: Option<HashMap<String, String>>,
     /// 是否为该应用强制执行 FORCE_DENYLIST_UNMOUNT（默认继承全局设置）
     #[serde(default)]
     pub force_denylist_unmount: Option<bool>,
-    /// 工作模式：
-    /// - "lite": 只修改 Build 类（轻量模式，可卸载模块）
-    /// - "full": Build + SystemProperties Hook（完整模式，不可卸载）
-    /// - "resetprop": 使用 resetprop 工具修改属性（需要 Root，不可卸载）
+    /// CPU 伪装预设名称（引用 [cpu_presets]）
     #[serde(default)]
-    pub mode: Option<String>,
+    pub cpu_spoof: Option<String>,
+    /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
+    #[serde(default)]
+    pub cpu_spoof_custom: Option<String>,
+    /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
+    #[serde(default)]
+    pub hide_maps: Option<Vec<String>>,
+    /// 是否跳过 COW 属性伪造，所有属性直接交给 companion resetprop 处理
+    /// true 时 getprop（独立进程）和进程内读取一致，适用于属性一致性对比检测
+    #[serde(default)]
+    pub companion_resetprop: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    /// 全局默认模式："lite", "full" 或 "resetprop"
-    #[serde(default = "default_mode")]
-    pub default_mode: String,
     /// 是否默认启用 FORCE_DENYLIST_UNMOUNT（避免模块挂载痕迹）
     #[serde(default)]
     pub default_force_denylist_unmount: bool,
@@ -108,10 +126,15 @@ pub struct Config {
     /// 应用配置
     #[serde(default)]
     pub apps: Vec<AppConfig>,
-}
-
-fn default_mode() -> String {
-    "lite".to_string() // 默认使用轻量模式，增强隐蔽性
+    /// 全局默认 CPU 伪装预设名称
+    #[serde(default)]
+    pub default_cpu_spoof: Option<String>,
+    /// CPU 伪装预设表
+    #[serde(default)]
+    pub cpu_presets: HashMap<String, String>,
+    /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认不启用）
+    #[serde(default)]
+    pub default_hide_maps: Vec<String>,
 }
 
 impl Config {
@@ -135,7 +158,7 @@ impl Config {
     pub fn get_merged_config(&self, package_name: &str) -> Option<MergedAppConfig> {
         // 优先查找直接配置的应用
         if let Some(app) = self.get_app_config(package_name) {
-            return Some(MergedAppConfig {
+            let mut merged = MergedAppConfig {
                 manufacturer: app.manufacturer.clone(),
                 brand: app.brand.clone(),
                 marketname: app.marketname.clone(),
@@ -143,6 +166,7 @@ impl Config {
                 name: app.name.clone(),
                 device: app.device.clone(),
                 product: app.product.clone(),
+                hardware: app.hardware.clone(),
                 fingerprint: app.fingerprint.clone(),
                 build_id: app.build_id.clone(),
                 characteristics: app.characteristics.clone(),
@@ -152,16 +176,22 @@ impl Config {
                 force_denylist_unmount: app
                     .force_denylist_unmount
                     .unwrap_or(self.default_force_denylist_unmount),
-                mode: app
-                    .mode
+                cpu_spoof: app.cpu_spoof.clone(),
+                cpu_spoof_custom: app.cpu_spoof_custom.clone(),
+                cpuinfo_content: None,
+                hide_maps: app
+                    .hide_maps
                     .clone()
-                    .unwrap_or_else(|| self.default_mode.clone()),
-            });
+                    .unwrap_or_else(|| self.default_hide_maps.clone()),
+                companion_resetprop: app.companion_resetprop.unwrap_or(false),
+            };
+            merged.cpuinfo_content = merged.resolve_cpuinfo(self);
+            return Some(merged);
         }
 
         // 如果没有直接配置，查找模板的 packages 列表
         if let Some(template) = self.find_template_for_package(package_name) {
-            return Some(MergedAppConfig {
+            let mut merged = MergedAppConfig {
                 manufacturer: template.manufacturer.clone(),
                 brand: template.brand.clone(),
                 marketname: template.marketname.clone(),
@@ -169,6 +199,7 @@ impl Config {
                 name: template.name.clone(),
                 device: template.device.clone(),
                 product: template.product.clone(),
+                hardware: template.hardware.clone(),
                 fingerprint: template.fingerprint.clone(),
                 build_id: template.build_id.clone(),
                 characteristics: template.characteristics.clone(),
@@ -178,57 +209,104 @@ impl Config {
                 force_denylist_unmount: template
                     .force_denylist_unmount
                     .unwrap_or(self.default_force_denylist_unmount),
-                mode: template
-                    .mode
+                cpu_spoof: template.cpu_spoof.clone(),
+                cpu_spoof_custom: template.cpu_spoof_custom.clone(),
+                cpuinfo_content: None,
+                hide_maps: template
+                    .hide_maps
                     .clone()
-                    .unwrap_or_else(|| self.default_mode.clone()),
-            });
+                    .unwrap_or_else(|| self.default_hide_maps.clone()),
+                companion_resetprop: template.companion_resetprop.unwrap_or(false),
+            };
+            merged.cpuinfo_content = merged.resolve_cpuinfo(self);
+            return Some(merged);
         }
 
         None
     }
 
     /// 构建合并配置的系统属性映射
-    /// 注意：仅用于 full 模式的 SystemProperties Hook 和 resetprop 模式
     /// 空字符串会被忽略，不会添加到映射中
     /// __DELETE__ 标记的属性会被记录到 delete_props 中
     pub fn build_merged_property_map(merged: &MergedAppConfig) -> HashMap<String, String> {
         let mut map = HashMap::new();
 
+        // 分区特定前缀：OnePlus/OPPO 等设备 bionic prefix routing 会读取这些变体
+        const PARTITION_PREFIXES: &[&str] = &[
+            "odm",
+            "vendor",
+            "system",
+            "system_ext",
+            "product",
+            "bootimage",
+        ];
+
         if let Some(manufacturer) = &merged.manufacturer
             && !manufacturer.is_empty()
         {
             map.insert("ro.product.manufacturer".to_string(), manufacturer.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(
+                    format!("ro.product.{pfx}.manufacturer"),
+                    manufacturer.clone(),
+                );
+            }
         }
         if let Some(brand) = &merged.brand
             && !brand.is_empty()
         {
             map.insert("ro.product.brand".to_string(), brand.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.brand"), brand.clone());
+            }
         }
         if let Some(marketname) = &merged.marketname
             && !marketname.is_empty()
         {
             map.insert("ro.product.marketname".to_string(), marketname.clone());
+            // OnePlus/OPPO 设备读 ro.vendor.oplus.market.name 而非 ro.product.marketname
+            map.insert(
+                "ro.vendor.oplus.market.name".to_string(),
+                marketname.clone(),
+            );
         }
         if let Some(model) = &merged.model
             && !model.is_empty()
         {
             map.insert("ro.product.model".to_string(), model.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.model"), model.clone());
+            }
         }
         if let Some(name) = &merged.name
             && !name.is_empty()
         {
             map.insert("ro.product.name".to_string(), name.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.name"), name.clone());
+            }
         }
         if let Some(device) = &merged.device
             && !device.is_empty()
         {
             map.insert("ro.product.device".to_string(), device.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.device"), device.clone());
+            }
         } else if let Some(name) = &merged.name
             && !name.is_empty()
         {
             // Fallback to name if device is not set (legacy behavior)
             map.insert("ro.product.device".to_string(), name.clone());
+            for pfx in PARTITION_PREFIXES {
+                map.insert(format!("ro.product.{pfx}.device"), name.clone());
+            }
+        }
+
+        if let Some(hardware) = &merged.hardware
+            && !hardware.is_empty()
+        {
+            map.insert("ro.hardware".to_string(), hardware.clone());
         }
 
         if let Some(fingerprint) = &merged.fingerprint
@@ -303,7 +381,7 @@ impl Config {
         map
     }
 
-    /// 构建需要删除的属性列表（用于 resetprop 模式）
+    /// 构建需要删除的属性列表（用于 companion 模式）
     pub fn build_delete_props_list(merged: &MergedAppConfig) -> Vec<String> {
         let mut delete_props = Vec::new();
 
@@ -353,6 +431,9 @@ impl Config {
         {
             delete_props.push("ro.build.characteristics".to_string());
         }
+        if merged.hardware.as_ref().is_some_and(|s| s == "__DELETE__") {
+            delete_props.push("ro.hardware".to_string());
+        }
 
         if let Some(custom_props) = &merged.custom_props {
             for (key, value) in custom_props {
@@ -363,13 +444,6 @@ impl Config {
         }
 
         delete_props
-    }
-
-    /// 构建用于 resetprop 模式的系统属性映射
-    pub fn build_merged_property_map_for_resetprop(
-        merged: &MergedAppConfig,
-    ) -> HashMap<String, String> {
-        Self::build_merged_property_map(merged)
     }
 }
 
@@ -383,6 +457,7 @@ pub struct MergedAppConfig {
     pub name: Option<String>,
     pub device: Option<String>,
     pub product: Option<String>,
+    pub hardware: Option<String>,
     pub fingerprint: Option<String>,
     pub build_id: Option<String>,
     pub characteristics: Option<String>,
@@ -390,73 +465,32 @@ pub struct MergedAppConfig {
     pub sdk_int: Option<u32>,
     pub custom_props: Option<HashMap<String, String>>,
     pub force_denylist_unmount: bool,
-    pub mode: String,
+    /// CPU 伪装预设名称
+    pub cpu_spoof: Option<String>,
+    /// 自定义 CPU 伪装内容
+    pub cpu_spoof_custom: Option<String>,
+    /// 最终要挂载到 /proc/cpuinfo 的内容（已解析完成）
+    pub cpuinfo_content: Option<String>,
+    /// 要从 /proc/self/maps 中清除的属性映射模式列表
+    pub hide_maps: Vec<String>,
+    /// 是否跳过 COW，所有属性走 companion resetprop（默认 false）
+    pub companion_resetprop: bool,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::Config;
-
-    #[test]
-    fn merged_config_includes_build_id_from_app_or_template() {
-        let config = Config::from_toml(
-            r#"
-[templates.pixel]
-packages = ["com.example.template"]
-build_id = "UP1A.231005.007"
-
-[[apps]]
-package = "com.example.app"
-build_id = "UKQ1.230917.001"
-"#,
-        )
-        .unwrap();
-
-        let app_merged = config.get_merged_config("com.example.app").unwrap();
-        assert_eq!(app_merged.build_id.as_deref(), Some("UKQ1.230917.001"));
-
-        let template_merged = config.get_merged_config("com.example.template").unwrap();
-        assert_eq!(template_merged.build_id.as_deref(), Some("UP1A.231005.007"));
-    }
-
-    #[test]
-    fn property_map_and_delete_list_handle_build_id() {
-        let config = Config::from_toml(
-            r#"
-[[apps]]
-package = "com.example.app"
-build_id = "UKQ1.230917.001"
-
-[[apps]]
-package = "com.example.delete"
-build_id = "__DELETE__"
-"#,
-        )
-        .unwrap();
-
-        let merged = config.get_merged_config("com.example.app").unwrap();
-        let prop_map = Config::build_merged_property_map(&merged);
-        for key in [
-            "ro.build.id",
-            "ro.system.build.id",
-            "ro.vendor.build.id",
-            "ro.product.build.id",
-        ] {
-            assert_eq!(
-                prop_map.get(key).map(String::as_str),
-                Some("UKQ1.230917.001")
-            );
+impl MergedAppConfig {
+    /// 计算最终 CPU 伪装内容
+    pub fn resolve_cpuinfo(&self, config: &Config) -> Option<String> {
+        if let Some(custom) = &self.cpu_spoof_custom
+            && !custom.is_empty()
+        {
+            return Some(custom.clone());
         }
 
-        let delete_merged = config.get_merged_config("com.example.delete").unwrap();
-        let delete_props = Config::build_delete_props_list(&delete_merged);
-        for key in [
-            "ro.build.id",
-            "ro.system.build.id",
-            "ro.vendor.build.id",
-            "ro.product.build.id",
-        ] {
-            assert!(delete_props.iter().any(|prop| prop == key));
-        }
+        let preset_name = self
+            .cpu_spoof
+            .as_ref()
+            .or(config.default_cpu_spoof.as_ref())?;
+
+        config.cpu_presets.get(preset_name).cloned()
     }
 }

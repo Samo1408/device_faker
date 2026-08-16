@@ -2,21 +2,21 @@
 mod atexit;
 mod companion;
 mod config;
+mod cow_props;
+mod cpu_spoof;
+#[cfg(target_os = "android")]
+mod file_logger;
 mod hooks;
-mod state;
 
-use std::{fs, path::Path};
+use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::Context;
-use companion::{
-    handle_companion_request, restore_previous_resetprop_if_needed,
-    spoof_system_props_via_companion,
-};
-use config::{Config, MergedAppConfig};
-use hooks::{hook_build_fields, hook_native_property_get, hook_system_properties};
+use companion::{handle_companion_request, spoof_system_props_via_companion};
+use config::Config;
+use cpu_spoof::{apply_cpu_spoof, apply_cpu_spoof_unmount};
+use hooks::hook_build_fields;
 use jni::{EnvUnowned, errors::ThrowRuntimeExAndDefault};
 use log::{LevelFilter, error, info};
-use state::{FAKE_PROPS, IS_FULL_MODE};
 use zygisk_api::{
     ZygiskModule,
     api::{V4, ZygiskApi, v4::ZygiskOption},
@@ -32,11 +32,8 @@ impl ZygiskModule for MyModule {
     type Api = V4;
 
     fn on_load(&self, _api: ZygiskApi<V4>, _env: EnvUnowned) {
-        android_logger::init_once(
-            android_logger::Config::default()
-                .with_max_level(LevelFilter::Error)
-                .with_tag("DeviceFaker"),
-        );
+        #[cfg(target_os = "android")]
+        file_logger::init_buffer_only();
     }
 
     fn pre_app_specialize(
@@ -56,10 +53,7 @@ impl ZygiskModule for MyModule {
         _env: EnvUnowned,
         _args: &<V4 as ZygiskRaw>::AppSpecializeArgs,
     ) {
-        let is_full_mode = *IS_FULL_MODE.lock().unwrap();
-        if !is_full_mode {
-            api.set_option(ZygiskOption::DlCloseModuleLibrary);
-        }
+        api.set_option(ZygiskOption::DlCloseModuleLibrary);
     }
 
     fn pre_server_specialize(
@@ -79,10 +73,31 @@ impl MyModule {
         env: &mut EnvUnowned,
         args: &mut <V4 as ZygiskRaw>::AppSpecializeArgs,
     ) -> anyhow::Result<()> {
+        let result = self.do_handle_app_specialize(api, env, args);
+
+        // 在 pre_app_specialize 退出前统一 flush，确保 on_load + specialize 期间
+        // 产生的所有日志都能发给 companion 落盘。
+        if let Err(e) = flush_log_buffer_to_companion(api) {
+            // 这里不能用 error!，否则会产生新的日志又无法 flush。
+            // 静默失败，日志将丢失。
+            let _ = e;
+        }
+
+        result
+    }
+
+    fn do_handle_app_specialize(
+        &self,
+        api: &mut ZygiskApi<V4>,
+        env: &mut EnvUnowned,
+        args: &mut <V4 as ZygiskRaw>::AppSpecializeArgs,
+    ) -> anyhow::Result<()> {
         let package_name = Self::extract_package_name(env, args)?;
         let user_id = Self::extract_android_user_id(args);
         let package_with_user = format!("{package_name}@{user_id}");
-        restore_previous_resetprop_if_needed(api, &package_with_user)?;
+
+        // companion 侧现在自己管理会话状态和恢复逻辑；
+        // Zygisk 模块侧不再需要跨应用恢复（ACTIVE_RESET_SESSION 已移除）。
 
         let config = match load_config() {
             Ok(Some(cfg)) => cfg,
@@ -115,6 +130,17 @@ impl MyModule {
             if config.debug {
                 info!("App {package_name} (user {user_id}) not in config, unloading module");
             }
+            // 即使应用未在 config 中，仍可能因其他 spoofed app 的 bind mount 泄漏而受影响。
+            // 主动卸载可能存在的 /proc/cpuinfo bind mount，确保本应用 namespace 干净。
+            // 内部 spoof_active_flag_exists() 检查决定是否走完整路径，
+            // 无 spoofed app 活跃时仅 1 次 access syscall (~13μs)。
+            // 不使用 config.has_any_cpu_spoof() 短路：config 热加载删除 cpu_spoof
+            // 配置后，仍活跃的 spoofed app 会因配置态判据脱节导致泄漏未清理。
+            if let Err(e) = apply_cpu_spoof_unmount(api, config.debug) {
+                error!("CPU spoof unmount failed for unconfigured {package_name}: {e:?}");
+            } else if config.debug {
+                info!("CPU spoof unmount applied for unconfigured {package_name}");
+            }
             api.set_option(ZygiskOption::DlCloseModuleLibrary);
             return Ok(());
         };
@@ -126,25 +152,92 @@ impl MyModule {
             }
         }
 
-        if config.debug {
-            info!(
-                "Using mode: {} for app: {package_name} (user {user_id})",
-                merged.mode
-            );
-        }
-
+        // ── 统一执行流（按需调度）──────────────────────────────────────────
+        // ① JNI 字段覆写（始终执行）
         hook_build_fields(env, &merged)?;
         if config.debug {
-            info!("Build fields hooked successfully");
+            info!("Build fields faked successfully");
         }
 
-        match SpoofMode::from_mode_str(&merged.mode) {
-            SpoofMode::Lite => Self::apply_lite_mode(api, config.debug),
-            SpoofMode::Full => Self::apply_full_mode(api, env, &merged, config.debug),
-            SpoofMode::Resetprop => {
-                Self::apply_resetprop_mode(api, &package_with_user, &merged, config.debug)
+        // ①-bis 清除 /proc/self/maps 中匹配模式的属性映射（anti-detection）
+        if !merged.hide_maps.is_empty() {
+            cow_props::unmap_prop_areas(&merged.hide_maps);
+        }
+
+        // ② COW 属性伪造（per-process，覆盖 native 读取，零模块驻留）
+        //    companion_resetprop = true 时跳过 COW，全部交给 companion resetprop（全局生效）
+        let prop_map = Config::build_merged_property_map(&merged);
+        if config.debug {
+            info!("Property map: {} entries", prop_map.len());
+        }
+
+        if merged.companion_resetprop {
+            // 全属性走 companion resetprop（getprop 和进程内读取一致）
+            let delete_props = Config::build_delete_props_list(&merged);
+            if !prop_map.is_empty() || !delete_props.is_empty() {
+                if let Err(e) =
+                    spoof_system_props_via_companion(api, &prop_map, &delete_props, &package_name)
+                {
+                    error!("Companion resetprop (full) failed: {e:?}");
+                } else if config.debug {
+                    info!(
+                        "Companion resetprop (full): {} set + {} delete for {package_name}",
+                        prop_map.len(),
+                        delete_props.len()
+                    );
+                }
+            }
+        } else {
+            // 默认路径：COW 处理，companion 只处理未找到属性和 __DELETE__
+            let unfound_props = match cow_props::apply_cow_spoof(&prop_map) {
+                Ok(unfound) => unfound,
+                Err(e) => {
+                    error!("COW spoof failed: {e:?}");
+                    Vec::new()
+                }
+            };
+
+            let delete_props = Config::build_delete_props_list(&merged);
+            if !unfound_props.is_empty() || !delete_props.is_empty() {
+                let unfound_map: HashMap<String, String> = unfound_props.into_iter().collect();
+                if let Err(e) = spoof_system_props_via_companion(
+                    api,
+                    &unfound_map,
+                    &delete_props,
+                    &package_name,
+                ) {
+                    error!("Companion resetprop failed: {e:?}");
+                } else if config.debug {
+                    info!(
+                        "Companion resetprop: {} new + {} delete for {package_name}",
+                        unfound_map.len(),
+                        delete_props.len()
+                    );
+                }
             }
         }
+
+        // ④ Companion 按需：CPU spoof
+        //    - 配置了 cpu_spoof: 走原有 apply_cpu_spoof 流程
+        //    - 未配置 cpu_spoof: 主动卸载可能泄漏到本应用 namespace 的 /proc/cpuinfo
+        //      bind mount（内部 spoof_active_flag_exists() 决定是否走完整路径）
+        if merged.cpuinfo_content.is_some() {
+            if let Err(e) = apply_cpu_spoof(api, &merged, &package_name, config.debug) {
+                error!("CPU spoof failed: {e:?}");
+            } else if config.debug {
+                info!("CPU spoof applied for {package_name}");
+            }
+        } else {
+            if let Err(e) = apply_cpu_spoof_unmount(api, config.debug) {
+                error!("CPU spoof unmount failed: {e:?}");
+            } else if config.debug {
+                info!("CPU spoof unmount applied for {package_name}");
+            }
+        }
+
+        // ⑤ DlClose（始终执行）
+        api.set_option(ZygiskOption::DlCloseModuleLibrary);
+        Ok(())
     }
 
     fn extract_android_user_id(args: &<V4 as ZygiskRaw>::AppSpecializeArgs) -> u32 {
@@ -160,7 +253,7 @@ impl MyModule {
 
     fn extract_package_name(
         env: &mut EnvUnowned,
-        args: &mut <V4 as ZygiskRaw>::AppSpecializeArgs,
+        args: &<V4 as ZygiskRaw>::AppSpecializeArgs,
     ) -> anyhow::Result<String> {
         let result: String = env
             .with_env(|_jenv| -> Result<String, jni::errors::Error> {
@@ -184,88 +277,6 @@ impl MyModule {
             .resolve::<ThrowRuntimeExAndDefault>();
         Ok(result)
     }
-
-    fn apply_lite_mode(api: &mut ZygiskApi<V4>, debug: bool) -> anyhow::Result<()> {
-        *FAKE_PROPS.lock().unwrap() = None;
-        *IS_FULL_MODE.lock().unwrap() = false;
-        if debug {
-            info!("Lite mode: only Build fields hooked, unloading module");
-        }
-        api.set_option(ZygiskOption::DlCloseModuleLibrary);
-        Ok(())
-    }
-
-    fn apply_full_mode(
-        api: &mut ZygiskApi<V4>,
-        env: &mut EnvUnowned,
-        merged: &MergedAppConfig,
-        debug: bool,
-    ) -> anyhow::Result<()> {
-        if debug {
-            info!("Full mode: hooking SystemProperties");
-        }
-
-        let prop_map = Config::build_merged_property_map(merged);
-        if debug {
-            info!("Property map created with {} entries", prop_map.len());
-        }
-
-        *FAKE_PROPS.lock().unwrap() = Some(prop_map);
-        *IS_FULL_MODE.lock().unwrap() = true;
-        hook_system_properties(api, env)?;
-        hook_native_property_get(api)?;
-
-        if debug {
-            info!("SystemProperties hooked successfully, module will stay loaded");
-        }
-
-        Ok(())
-    }
-
-    fn apply_resetprop_mode(
-        api: &mut ZygiskApi<V4>,
-        package_name: &str,
-        merged: &MergedAppConfig,
-        debug: bool,
-    ) -> anyhow::Result<()> {
-        if debug {
-            info!("Resetprop mode: using companion process");
-        }
-
-        let prop_map = Config::build_merged_property_map_for_resetprop(merged);
-        let delete_props = Config::build_delete_props_list(merged);
-        spoof_system_props_via_companion(api, &prop_map, &delete_props, package_name)?;
-
-        if debug {
-            info!("Resetprop spoofing completed");
-        }
-
-        *FAKE_PROPS.lock().unwrap() = None;
-        *IS_FULL_MODE.lock().unwrap() = false;
-        api.set_option(ZygiskOption::DlCloseModuleLibrary);
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy)]
-enum SpoofMode {
-    Lite,
-    Full,
-    Resetprop,
-}
-
-impl SpoofMode {
-    fn from_mode_str(value: &str) -> Self {
-        match value {
-            "lite" => Self::Lite,
-            "full" => Self::Full,
-            "resetprop" => Self::Resetprop,
-            other => {
-                error!("Mode '{other}' not fully supported, falling back to 'lite' mode");
-                Self::Lite
-            }
-        }
-    }
 }
 
 fn load_config() -> anyhow::Result<Option<Config>> {
@@ -286,6 +297,24 @@ fn configure_log_level(debug_enabled: bool) {
         LevelFilter::Error
     };
     log::set_max_level(level);
+}
+
+fn flush_log_buffer_to_companion(api: &mut ZygiskApi<V4>) -> anyhow::Result<()> {
+    let lines = file_logger::drain_lines();
+    if lines.is_empty() {
+        return Ok(());
+    }
+
+    let request = companion::CompanionRequest::WriteLog(companion::WriteLogRequest { lines });
+    let response = companion::send_companion_command(api, &request)?;
+    if response.status != 0 {
+        anyhow::bail!(
+            response
+                .message
+                .unwrap_or_else(|| "companion write log failed".to_string())
+        );
+    }
+    Ok(())
 }
 
 // Note: The register_module macro should handle the EnvUnowned properly

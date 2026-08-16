@@ -5,14 +5,99 @@
 # 全局配置
 # ============================================================
 
-# 全局默认模式（推荐使用 lite 以增强隐蔽性）
-# - "lite": 轻量模式，只修改 Build 类，完成后卸载内存（不易被检测）⭐ 推荐
-# - "full": 完整模式，伪装 Build + SystemProperties（功能完整，但可能被检测）
-# - "resetprop": 使用 resetprop 工具修改属性（持续伪装）
-default_mode = "lite"
+# 全局设置
+#
+# debug = true 可开启详细日志（默认关闭，隐蔽性更好）
+# default_force_denylist_unmount = true 可全局启用 FORCE_DENYLIST_UNMOUNT
+# default_cpu_spoof = "kirin_9030pro" 可设置全局默认 CPU 伪装预设
+
+# CPU 伪装预设表
+# 在模板或 [[apps]] 中使用 cpu_spoof = "预设名称" 引用
+[cpu_presets]
+kirin_9030pro = """Processor       : AArch64 Processor rev 0 (aarch64)
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit ilrcpc flagm ssbs sb pacg dcpodp flagm2 frint svei8mm i8mm bti
+CPU implementer : 0x48
+CPU architecture: 8
+CPU variant     : 0x0
+CPU part        : 0xd06
+CPU revision    : 0
+
+processor       : 0
+BogoMIPS        : 38.40
+CPU implementer : 0x48
+CPU architecture: 8
+CPU variant     : 0x0
+CPU part        : 0xd06
+CPU revision    : 0
+
+processor       : 1
+BogoMIPS        : 38.40
+CPU implementer : 0x48
+CPU architecture: 8
+CPU variant     : 0x1
+CPU part        : 0xd47
+CPU revision    : 0
+
+processor       : 2
+BogoMIPS        : 38.40
+CPU implementer : 0x48
+CPU architecture: 8
+CPU variant     : 0x1
+CPU part        : 0xd47
+CPU revision    : 0
+
+processor       : 3
+BogoMIPS        : 38.40
+CPU implementer : 0x48
+CPU architecture: 8
+CPU variant     : 0x1
+CPU part        : 0xd47
+CPU revision    : 0
+
+processor       : 4
+BogoMIPS        : 38.40
+CPU implementer : 0x48
+CPU architecture: 8
+CPU variant     : 0x1
+CPU part        : 0xd47
+CPU revision    : 0
+
+processor       : 5
+BogoMIPS        : 38.40
+CPU implementer : 0x41
+CPU architecture: 8
+CPU variant     : 0x0
+CPU part        : 0xd46
+CPU revision    : 0
+
+processor       : 6
+BogoMIPS        : 38.40
+CPU implementer : 0x41
+CPU architecture: 8
+CPU variant     : 0x0
+CPU part        : 0xd46
+CPU revision    : 0
+
+processor       : 7
+BogoMIPS        : 38.40
+CPU implementer : 0x41
+CPU architecture: 8
+CPU variant     : 0x0
+CPU part        : 0xd46
+CPU revision    : 0
+
+processor       : 8
+BogoMIPS        : 38.40
+CPU implementer : 0x41
+CPU architecture: 8
+CPU variant     : 0x0
+CPU part        : 0xd46
+CPU revision    : 0
+
+Hardware        : HiSilicon Kirin 9030 Pro"""
 
 # 调试模式（默认关闭以提高隐蔽性）
-# 设置为 true 可以在 logcat 中看到详细日志，方便排查问题
+# 设置为 true 后详细日志写入 /data/adb/device_faker/logs/device_faker.log
 # 正常使用时建议设置为 false 或删除此行
 # debug = false
 
@@ -21,7 +106,7 @@ default_mode = "lite"
 # ============================================================
 # 定义常用机型模板，可以直接在模板中指定包名列表
 
-[templates.redmagic_9_pro]
+[templates.redmagic_11_pro]
 packages = [
     "com.mobilelegends.mi",
     "com.supercell.brawlstars",
@@ -29,13 +114,13 @@ packages = [
     "com.netease.newspike",
     "com.activision.callofduty.warzone",
 ]
-manufacturer = "ZTE"
-brand = "nubia"
-model = "NX769J"
-device = "REDMAGIC 9 Pro"
-product = "NX769J"
-fingerprint = "nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys"
-build_id = "UKQ1.230917.001"
+manufacturer = "Nubia"
+brand = "REDMAGIC"
+model = "NX809J"
+device = "REDMAGIC 11 PRO"
+product = "NX809J"
+fingerprint = "REDMAGIC/NX809J-UN/NX809J:16/BP2A.250605.031.A3/20251017.000000:user/release-keys"
+build_id = "BP2A.250605.031.A3"
 
 [templates]
 [templates."一加15"]
@@ -55,15 +140,6 @@ device = "V2505A"
 product = "V2505A"
 fingerprint = ""
 packages = [ "com.tencent.tmgp.sgame", "com.tencent.tmgp.codev" ]
-
-[templates."红魔平板3"]
-manufacturer = "NUBIA"
-brand = "NUBIA"
-model = "NP05J"
-device = "NP05J"
-product = "NP05J"
-fingerprint = ""
-packages = [ "com.tencent.tmgp.cf" ]
 
 # ============================================================
 # 应用配置
@@ -171,63 +247,36 @@ manufacturer = "vivo"
 # 配置说明
 # ============================================================
 #
+# 【架构】按需调度（无需选择模式）
+#
+# 所有应用自动走统一执行流：
+#   ① Build 字段覆写 (JNI)      — 始终执行（如有设备字段）
+#   ② 属性伪装                   — companion_resetprop = true 时全部走
+#                                  companion resetprop；否则 COW 优先，
+#                                  COW 未找到的属性与 __DELETE__ 走 companion
+#   ③ CPU 伪装                   — 按需（仅 cpu_spoof / cpu_spoof_custom 时）
+#   ④ DlClose                    — 始终执行（零模块驻留）
+#
+# 用户不再需要理解 lite/full/companion 的区别。
+#
 # 【配置方式】
 # 1. 模板包名列表 - 在模板的 packages 中直接添加包名
 # 2. 直接配置 - 使用 [[apps]] 直接指定设备信息
 #
 # 【优先级】
 # 字段优先级：[[apps]] 直接配置 > 模板 packages 列表
-# 模式优先级：[[apps]].mode > [templates].mode > 全局 default_mode
 #
-# 【模板可以设置模式】⭐
-# 模板支持设置 mode 字段：
-#   [templates.xxx]
-#   packages = ["com.app1", "com.app2"]
-#   mode = "full"  # 这个模板的所有应用都使用 full 模式
+# 【COW 引擎】
+# - 通过 mmap COW 重映射 prop_area 文件，直接覆写属性内存
+# - 覆盖 __system_property_get 和 __system_property_read_callback（同一份 mmap）
+# - 无 GOT/PLT 修改，无 JNI native method 替换
+# - 模块写完即 DlClose，/proc/self/maps 干净
 #
-# 如果不设置，使用全局 default_mode
-# 如果需要覆盖，在 [[apps]] 中单独设置
+# 【__DELETE__ 标记】
+# 设置属性值为 "__DELETE__" 可通过 companion resetprop 删除该属性。
+# 设置属性值为 "__EMPTY__" 将属性值设为空字符串。
 #
-# 【字段生效范围】⚠️
-# lite 模式（默认）：
-#   ✅ manufacturer, brand, model, device, product, fingerprint, build_id
-#   ❌ name, marketname, characteristics（仅 full 模式生效）
-#
-# full 模式：
-#   ✅ 所有字段都生效
-#   ⭐ name 字段会同时伪装 ro.product.name 和 ro.product.device
-#   ⭐ characteristics 在 native 层伪装
-# 
-# 【模式说明】
-# 
-# ┌──────────┬────────────┬──────────────┬────────────┬──────────────┐
-# │   模式   │  Build类   │ Properties   │  可卸载    │   隐蔽性     │
-# ├──────────┼────────────┼──────────────┼────────────┼──────────────┤
-# │  lite ⭐ │     ✅     │      ❌      │     ✅     │  ⭐⭐⭐⭐⭐  │
-# │  full    │     ✅     │      ✅      │     ❌     │  ⭐⭐⭐⭐      │
-# │ resetprop│     ✅     │      ✅      │     ❌     │  ⭐⭐⭐        │
-# └──────────┴────────────┴──────────────┴────────────┴──────────────┘
-# 
-# 【lite 模式】（默认，推荐）⭐
-# - 只修改 android.os.Build 类的静态字段
-# - 完成后立即卸载模块，模块不驻留内存
-# - ✅ 优点：隐蔽性极高，不易被检测
-# - ✅ 优点：对 95% 的应用来说，伪装 Build 类已经足够
-# - ⚠️ 缺点：无法伪装 SystemProperties（极少数应用会检查）
-# - 适用场景：默认选择，适合大多数应用
-# 
-# 【full 模式】（按需使用）
-# - 修改 Build 类 + 伪装 SystemProperties.native_get
-# - 模块保持加载状态，驻留内存
-# - ✅ 优点：完整伪装，拦截所有属性查询（包括 native 层）
-# - ⚠️ 缺点：模块驻留内存，可能被某些应用检测到
-# - 适用场景：需要完全伪装 SystemProperties 的特殊应用
-#
-# 【resetprop 模式】
-# - 使用 resetprop 工具修改系统属性
-# - ✅ 优点：可以修改只读属性
-# 
-# 推荐策略：
-# 1. 默认所有应用使用 lite 模式（不设置 mode 字段）
-# 2. 只有当某个应用在 lite 模式下仍能检测到真实机型时，才为其单独设置 mode = "full"
-# 3. 需要伪装 characteristics 的应用使用 full 模式
+# 【CPU 伪装】
+# 在模板或 [[apps]] 中设置 cpu_spoof 引用 cpu_presets 预设，
+# 或直接设置 cpu_spoof_custom 自定义 /proc/cpuinfo 内容。
+# 有 CPU 伪装配置时，自动通过 companion fork + setns + bind mount 实现。

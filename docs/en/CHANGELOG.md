@@ -1,5 +1,54 @@
 # 📝 Changelog
 
+## ⬆️[v1.4.0 → v1.5.0] - 2026-08-01
+
+### 🆕 New Features
+- 🌍 Added Turkish language translations
+- 🧬 Added CPU camouflage
+- 👥 WebUI apps page supports multi-user apps display
+- 📦 Installer script added Zygisk detection and automatic Chinese/English language switching
+- 🔒 New COW property spoofing engine — replaces full mode, per-process isolation with zero residency
+- 🔄 companion_resetprop switch replaces resetprop mode
+- 🏷️ Added Build.HARDWARE camouflage at Build layer
+
+### ⚡ Improvements
+- ⚡ Optimized module underlying performance (by @Tools-cx-app)
+- 👆 WebUI supports step-by-step swipe-back navigation
+- 🎬 Optimized WebUI page transition animations
+- 🏗️ Refactored logging system
+- 🎨 Optimized WebUI styles
+- 📦 Updated WebUI build dependencies
+- 🏗️ Removed WebUI-X API, adopted pure KernelSU WebUI API
+- 🏎️ resetprop enabled skip_svc direct write + property area compaction
+- 🏗️ Removed mode distinction — unified into single COW + companion execution flow
+- 🔄 Refactored and optimized companion resetprop restore mechanism
+
+## ⬆️[v1.3.5 → v1.4.0] - 2026-05-02
+
+### 🆕 New Features
+- 🖥️ WebUI apps page supports system app display toggle
+- 🌐 WebUI online template library added GitHub source
+- 🏷️ Added build_id and Build.ID camouflage support for all three modes
+- 📥 WebUI template page added import/export tools and local template export
+- 📤 WebUI template card added export button
+- 👆 WebUI supports swipe gesture to switch between pages
+- ✏️ WebUI template page supports editing existing template names
+
+### 🐛 Bug Fixes
+- 🧹 Fixed residual old values when clearing partial fields in WebUI template editor
+- 🔄 Fixed state sync issue of custom property camouflage session when switching between foreground and background in resetprop mode
+
+### ⚡ Improvements
+- 🔗 Updated to adapt jni 0.22 API
+- ⚡ Significantly optimized WebUI page switching performance
+- 🏎️ Optimized WebUI app list loading performance
+- 🏗️ Refactored the entire WebUI online template library pipeline
+- 📏 Used cutting-edge Web technology pretext to optimize text height measurement in online template virtual list
+- 🚀 Optimized WebUI first screen page switch responsiveness
+- 🎬 Added WebUI page switching animation
+- 🦀 Refactored external resetprop binary call into built-in Rust library (by @Tools-cx-app)
+- 💾 Improved configuration file backup format
+
 ## ⬆️[v1.3.0 → v1.3.5] - 2026-03-20
 
 ### 🆕 New Features

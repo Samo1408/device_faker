@@ -78,6 +78,7 @@ const SDK_INT_KEYS: &[&str] = &[
     "ro.vendor.build.version.sdk",
     "ro.product.build.version.sdk",
 ];
+const HARDWARE_KEYS: &[&str] = &["ro.hardware"];
 
 #[derive(Debug, Serialize)]
 struct OutputConfig {
@@ -102,6 +103,8 @@ struct DeviceTemplateToml {
     #[serde(skip_serializing_if = "Option::is_none")]
     product: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    hardware: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     fingerprint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     build_id: Option<String>,
@@ -122,6 +125,7 @@ impl DeviceTemplateToml {
             || self.name.is_some()
             || self.device.is_some()
             || self.product.is_some()
+            || self.hardware.is_some()
             || self.fingerprint.is_some()
             || self.build_id.is_some()
             || self.characteristics.is_some()
@@ -205,6 +209,7 @@ fn build_template(properties: &BTreeMap<String, String>) -> DeviceTemplateToml {
         name,
         device,
         product: read_non_empty_property(properties, PRODUCT_KEYS),
+        hardware: read_non_empty_property(properties, HARDWARE_KEYS),
         fingerprint: read_non_empty_property(properties, FINGERPRINT_KEYS),
         build_id: read_non_empty_property(properties, BUILD_ID_KEYS),
         characteristics: read_non_empty_property(properties, CHARACTERISTICS_KEYS),

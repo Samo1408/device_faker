@@ -38,8 +38,9 @@ import AppsPageSkeleton from '../components/apps/AppsPageSkeleton.vue'
 import { useAppsStore } from '../stores/apps'
 import { useConfigStore } from '../stores/config'
 import { useSettingsStore } from '../stores/settings'
+import { useModalHistory } from '../composables/useModalHistory'
 import { useI18n } from '../utils/i18n'
-import { normalizePackageName } from '../utils/package'
+import { normalizePackageName, parsePackageUser } from '../utils/package'
 import type { InstalledApp } from '../types'
 
 type FilterType = 'all' | 'configured'
@@ -56,6 +57,10 @@ const searchQuery = ref('')
 const filterType = ref<FilterType>('all')
 const configDialogVisible = ref(false)
 const currentApp = ref<InstalledApp | null>(null)
+
+useModalHistory(configDialogVisible, () => {
+  configDialogVisible.value = false
+})
 const showSystemApps = computed({
   get: () => settingsStore.showSystemApps,
   set: (value: boolean) => settingsStore.setShowSystemApps(value),
@@ -225,9 +230,19 @@ const filteredApps = computed(() => {
   }
 
   return apps.slice().sort((a, b) => {
+    // 主键：归一化包名，让同包名（含 @userId 多用户变体）聚在一起
+    const aNorm = normalizePackageName(a.packageName)
+    const bNorm = normalizePackageName(b.packageName)
+    if (aNorm !== bNorm) return aNorm < bNorm ? -1 : 1
+
+    // 同包名：user0 优先，非零用户按 userId 升序
+    const aUser = parsePackageUser(a.packageName).userId
+    const bUser = parsePackageUser(b.packageName).userId
+    if (aUser !== bUser) return aUser - bUser
+
+    // 同包名同用户：已安装优先
     const aInstalled = a.installed !== false
     const bInstalled = b.installed !== false
-
     if (aInstalled === bInstalled) return 0
     return aInstalled ? -1 : 1
   })

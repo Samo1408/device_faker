@@ -1,5 +1,54 @@
 # 📝更新日志
 
+## ⬆️[v1.4.0 → v1.5.0] - 2026-08-01
+
+### 🆕 新功能
+- 🌍 新增土耳其语翻译
+- 🧬 新增CPU伪装能力
+- 👥 WebUI应用页支持显示多用户应用
+- 📦 安装脚本新增Zygisk检测与中英双语自动切换
+- 🔒 新增COW属性伪造引擎 — 替代full模式，per-process隔离零驻留
+- 🔄 companion_resetprop 开关替代 resetprop 模式
+- 🏷️ Build层新增 Build.HARDWARE 伪装
+
+### ⚡ 改进
+- ⚡ 优化模块底层性能（by @Tools-cx-app）
+- 👆 WebUI支持侧滑返回逐级导航
+- 🎬 优化WebUI页面衔接动画
+- 🏗️ 日志系统重构
+- 🎨 优化WebUI样式
+- 📦 更新WebUI构建依赖
+- 🏗️ 移除WebUI-X API，采用纯KernelSU WebUI API
+- 🏎️ resetprop 启用 skip_svc 直写 + 属性区压缩
+- 🏗️ 移除模式区分 — 统一为COW + companion唯一执行流
+- 🔄 companion resetprop 恢复机制重构优化
+
+## ⬆️[v1.3.5 → v1.4.0] - 2026-05-02
+
+### 🆕 新功能
+- 🖥️ WebUI应用页支持系统应用显示切换
+- 🌐 WebUI加入在线模板GitHub源
+- 🏷️ 为三种模式补充 build_id 与 Build.ID 伪装支持
+- 📥 WebUI模板页新增导入/导出工具与本机模板导出功能
+- 📤 WebUI模板页模板卡片添加导出按钮
+- 👆 WebUI支持左右滑动切换页面
+- ✏️ WebUI模板页支持编辑已存在模板名称
+
+### 🐛 修复
+- 🧹 修复WebUI模板编辑页清空部分字段后旧值残留问题
+- 🔄 修复resetprop模式自定义属性伪装会话在前后台切换时的状态同步问题
+
+### ⚡ 改进
+- 🔗 更新适配jni 0.22 API
+- ⚡ 大幅优化WebUI页面切换性能
+- 🏎️ 优化WebUI应用列表加载性能
+- 🏗️ 重构WebUI在线模板库全链路
+- 📏 使用最前沿Web技术 pretext 优化WebUI在线模板虚拟列表文本高度测量
+- 🚀 优化WebUI首屏切页响应
+- 🎬 添加WebUI页面切换动画
+- 🦀 将外部调用resetprop二进制重构为内置Rust库（by @Tools-cx-app）
+- 💾 改进配置文件备份格式
+
 ## ⬆️[v1.3.0 → v1.3.5] - 2026-03-20
 
 ### 🆕 新功能
