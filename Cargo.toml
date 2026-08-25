@@ -14,7 +14,7 @@ jni = { version = "0.22", default-features = false }
 log = { version = "^0.4", default-features = false }
 serde = { version = "1.0.228", features = ["derive", "std"] }
 toml = { version = "1.0", features = ["parse"] }
-zygisk-api = { git = "https://github.com/Seyud/zygisk-api-rs.git" }
+zygisk-api = { git = "https://github.com/Samo1408/zygisk-api-rust.git" }
 serde_json = "1.0.149"
 libc = "0.2"
 prop-rs-android = { git = "https://github.com/Kernel-SU/ksu_props.git", version = "0.2.0" }
