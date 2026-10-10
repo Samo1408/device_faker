@@ -312,7 +312,7 @@ fn extract_zip_to_dir(zip_path: &str, dest: &Path) -> Result<()> {
         };
 
         let out_path = dest.join(rel_path);
-        if entry.name().ends_with('/') {
+        if entry.name()?.ends_with('/') {
             fs::create_dir_all(&out_path).context("failed to create directory from ZIP")?;
             continue;
         }

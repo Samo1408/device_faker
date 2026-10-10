@@ -5,7 +5,7 @@
 //! 不会污染前台判定（assistantscreen 之类没有 resumed activity，不是 TOP）。
 //!
 //! 机制（root，经 rsbinder，android_11_plus/binderfs）：
-//! 1. `ProcessState::init_default()` + `hub::get_service("activity")`；
+//! 1. `ProcessState::init_default()` + `hub::wait_for_interface("activity")`；
 //! 2. rsbinder-aidl 生成的 `BnUidObserver` 实现回调（onUidStateChanged 事务码
 //!    与真实 AOSP `android.app.IUidObserver` 一致）；
 //! 3. `BpActivityManager::register_uid_observer(observer, which, cutpoint, pkg)`
@@ -119,34 +119,34 @@ impl IUidObserver for UidObserverState {
         proc_state: i32,
         _seq: i64,
         _capability: i32,
-    ) -> rsbinder::status::Result<()> {
+    ) -> rsbinder::BinderResult<()> {
         debug!("fg observer: onUidStateChanged uid={uid} proc_state={proc_state}");
         self.on_top_change(uid, proc_state == PROCESS_STATE_TOP);
         Ok(())
     }
 
-    fn r#onUidGone(&self, uid: i32, _disabled: bool) -> rsbinder::status::Result<()> {
+    fn r#onUidGone(&self, uid: i32, _disabled: bool) -> rsbinder::BinderResult<()> {
         debug!("fg observer: onUidGone uid={uid}");
         self.on_top_change(uid, false);
         Ok(())
     }
 
-    fn r#onUidActive(&self, uid: i32) -> rsbinder::status::Result<()> {
+    fn r#onUidActive(&self, uid: i32) -> rsbinder::BinderResult<()> {
         debug!("fg observer: onUidActive uid={uid}");
         Ok(())
     }
 
-    fn r#onUidIdle(&self, uid: i32, _disabled: bool) -> rsbinder::status::Result<()> {
+    fn r#onUidIdle(&self, uid: i32, _disabled: bool) -> rsbinder::BinderResult<()> {
         debug!("fg observer: onUidIdle uid={uid}");
         Ok(())
     }
 
-    fn r#onUidProcAdjChanged(&self, uid: i32, adj: i32) -> rsbinder::status::Result<()> {
+    fn r#onUidProcAdjChanged(&self, uid: i32, adj: i32) -> rsbinder::BinderResult<()> {
         debug!("fg observer: onUidProcAdjChanged uid={uid} adj={adj}");
         Ok(())
     }
 
-    fn r#onUidCachedChanged(&self, uid: i32, _cached: bool) -> rsbinder::status::Result<()> {
+    fn r#onUidCachedChanged(&self, uid: i32, _cached: bool) -> rsbinder::BinderResult<()> {
         debug!("fg observer: onUidCachedChanged uid={uid}");
         Ok(())
     }

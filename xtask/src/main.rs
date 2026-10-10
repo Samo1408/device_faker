@@ -147,7 +147,7 @@ fn build(release: bool, verbose: bool) -> Result<()> {
     let local_offset = UtcOffset::from_hms(8, 0, 0).expect("UTC+8 offset should always be valid");
 
     zip_create_from_directory_with_options(&package_path, &temp_dir, |entry_path| {
-        let mut options: FileOptions<'_, ()> = FileOptions::default()
+        let mut options: FileOptions<'_, '_, ()> = FileOptions::default()
             .compression_method(CompressionMethod::Deflated)
             .compression_level(Some(9));
 
@@ -167,8 +167,11 @@ fn build(release: bool, verbose: bool) -> Result<()> {
 fn zip_entry_modified_time(entry_path: &Path, local_offset: UtcOffset) -> Option<DateTime> {
     let modified = fs::metadata(entry_path).ok()?.modified().ok()?;
     let modified = OffsetDateTime::from(modified).to_offset(local_offset);
+    // zip 9 移除了 `TryFrom<OffsetDateTime> for DateTime`，只剩 PrimitiveDateTime 版本。
+    // ZIP 条目只存墙上时间（无时区），因此取 date+time 与原语义完全一致。
+    let primitive = time::PrimitiveDateTime::new(modified.date(), modified.time());
 
-    DateTime::try_from(modified).ok()
+    DateTime::try_from(primitive).ok()
 }
 
 fn check(release: bool, verbose: bool) -> Result<()> {

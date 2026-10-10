@@ -25,11 +25,10 @@ prop-rs-android = { git = "https://github.com/KernelSU2/ksu_props", rev = "ddb6e
 memmap2 = "0.9.11"
 # 前台 UidObserver：root binder 注册 ActivityManager.registerUidObserver，
 # 事件驱动接收 PROCESS_STATE_TOP 变化。
-rsbinder = { version = "0.10", features = ["android_10_plus"] }
-async-trait = "0.1"
+rsbinder = { version = "0.11", features = ["android_10_plus"] }
 
 [build-dependencies]
-rsbinder-aidl = "0.10"
+rsbinder-aidl = "0.11"
 
 [lib]
 name = "zygisk"

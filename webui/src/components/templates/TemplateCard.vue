@@ -22,7 +22,7 @@
           :aria-label="t('common.edit')"
           @click="emit('edit', name, template)"
         >
-          <Edit2 :size="18" />
+          <PenLine :size="18" />
         </button>
         <button
           class="icon-btn danger"
@@ -31,7 +31,7 @@
           :aria-label="t('common.delete')"
           @click="emit('delete', name)"
         >
-          <Trash2 :size="18" />
+          <Trash :size="18" />
         </button>
       </div>
     </div>
@@ -101,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { Copy, Edit2, Trash2 } from '@lucide/vue'
+import { Copy, PenLine, Trash } from '@lucide/vue'
 import { toRefs } from 'vue'
 import { useI18n } from '../../utils/i18n'
 import type { Template } from '../../types'

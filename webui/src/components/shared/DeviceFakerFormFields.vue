@@ -150,7 +150,7 @@
         </div>
         <div class="custom-prop-actions">
           <el-button class="custom-prop-icon-btn" @click="removeCustomProp(index)">
-            <Trash2 :size="16" />
+            <Trash :size="16" />
           </el-button>
           <el-dropdown
             trigger="click"
@@ -194,7 +194,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronDown, Plus, Trash2 } from '@lucide/vue'
+import { ChevronDown, Plus, Trash } from '@lucide/vue'
 import { useI18n } from '../../utils/i18n'
 import { useDeviceFakerFormField } from '../../composables/useDeviceFakerForm'
 

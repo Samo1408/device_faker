@@ -72,7 +72,7 @@
           </div>
 
           <div v-else-if="entry.item.detailStatus === 'error'" class="card-body card-body--error">
-            <AlertTriangle :size="18" />
+            <TriangleAlert :size="18" />
             <p class="error-copy">
               {{ entry.item.detailError || t('templates.online.errors.detail_failed') }}
             </p>
@@ -133,7 +133,7 @@
 <script setup lang="ts">
 import { layout, prepare } from '@chenglou/pretext'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { AlertTriangle, Download, LoaderCircle, RefreshCw } from '@lucide/vue'
+import { Download, LoaderCircle, RefreshCw, TriangleAlert } from '@lucide/vue'
 import type { OnlineTemplateDetail, OnlineTemplateRecord, OnlineTemplateLoadState } from '../types'
 import { useI18n } from '../utils/i18n'
 

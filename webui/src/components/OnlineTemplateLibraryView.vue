@@ -120,7 +120,7 @@
     </section>
 
     <div v-if="onlineTemplatesStore.loadError" class="warning-banner">
-      <AlertTriangle :size="18" />
+      <TriangleAlert :size="18" />
       <p>{{ onlineTemplatesStore.loadError }}</p>
       <button class="inline-action" type="button" @click="onlineTemplatesStore.clearLoadError">
         {{ t('common.confirm') }}
@@ -185,7 +185,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import {
-  AlertTriangle,
   ArrowLeft,
   CircleAlert,
   Database,
@@ -193,6 +192,7 @@ import {
   RefreshCw,
   RotateCw,
   Search,
+  TriangleAlert,
   X,
 } from '@lucide/vue'
 import OnlineTemplateVirtualList from './OnlineTemplateVirtualList.vue'
