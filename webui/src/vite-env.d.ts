@@ -7,6 +7,10 @@ declare module '*.vue' {
   export default component
 }
 
+// element-plus >= 2.14.0 移除了 style 子路径的 .d.ts（上游变更），
+// 为按需样式导入（message / message-box 等 style/css）补充模块声明
+declare module 'element-plus/es/components/*/style/css'
+
 interface ImportMetaEnv {
   readonly DEV: boolean
   readonly PROD: boolean
