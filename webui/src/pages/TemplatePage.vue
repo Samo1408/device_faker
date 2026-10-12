@@ -21,34 +21,8 @@
             <strong>{{ t('templates.global_mode.title') }}</strong>
             <p>{{ t('templates.global_mode.description') }}</p>
           </div>
-          <el-switch
-            :model-value="configStore.config.global_mode === true"
-            :loading="globalModeSaving"
-            @change="setGlobalMode"
-          />
+          <span class="global-mode-status">{{ t('templates.global_mode.enabled') }}</span>
         </section>
-
-        <div v-if="conflictingPackages.length > 0" class="conflict-banner">
-          <div class="conflict-banner-head">
-            <strong>{{ t('templates.conflict.banner_title') }}</strong>
-          </div>
-          <p class="conflict-banner-desc">{{ t('templates.conflict.banner_desc') }}</p>
-          <ul class="conflict-list">
-            <li v-for="conflict in conflictingPackages" :key="conflict.packageName">
-              <code class="conflict-pkg">{{ conflict.packageName }}</code>
-              <span class="conflict-effective">
-                {{ t('templates.conflict.effective', { name: conflict.templates[0] }) }}
-              </span>
-              <span class="conflict-ignored">
-                {{
-                  t('templates.conflict.ignored', {
-                    names: conflict.templates.slice(1).join(', '),
-                  })
-                }}
-              </span>
-            </li>
-          </ul>
-        </div>
 
         <TemplateList
           :entries="filteredTemplates"
@@ -86,7 +60,6 @@ import { useModalHistory } from '../composables/useModalHistory'
 import { useI18n } from '../utils/i18n'
 import { useLazyMessageBox } from '../utils/elementPlus'
 import { copyTextToClipboard, stringifyTemplatesToToml } from '../utils/templateTransfer'
-import { findConflictingPackages } from '../utils/config'
 import { toast } from 'kernelsu-alt'
 import type { Template } from '../types'
 
@@ -104,38 +77,11 @@ const { t, locale } = useI18n()
 const getMessageBox = useLazyMessageBox()
 
 const searchQuery = ref('')
-const globalModeSaving = ref(false)
 const viewTransitionName = ref<'template-library-forward' | 'template-library-back'>(
   'template-library-forward'
 )
 
-async function setGlobalMode(value: string | number | boolean) {
-  if (globalModeSaving.value) return
-  const previous = configStore.config.global_mode === true
-  configStore.config.global_mode = value === true
-  globalModeSaving.value = true
-  try {
-    if (configStore.config.global_mode && configStore.templateEntries.length === 0) {
-      throw new Error(t('templates.global_mode.requires_template'))
-    }
-    await configStore.saveConfig()
-    toast(t(configStore.config.global_mode ? 'templates.global_mode.enabled' : 'templates.global_mode.disabled'))
-  } catch (error) {
-    configStore.config.global_mode = previous
-    const message = error instanceof Error ? error.message : String(error)
-    toast(`${t('common.failed')}: ${message}`)
-  } finally {
-    globalModeSaving.value = false
-  }
-}
-
 const allTemplates = computed(() => configStore.templateEntries)
-
-/**
- * 被多个模板同时声明的包名。运行时只取第一个模板，其余静默忽略
- * —— 这是「配了三星却生效 iQOO」的根因，必须在模板页显式告警。
- */
-const conflictingPackages = computed(() => findConflictingPackages(allTemplates.value))
 
 const filteredTemplates = computed(() => {
   if (!searchQuery.value.trim()) {
@@ -421,6 +367,7 @@ html.dark .conflict-effective {
 .global-mode-copy { min-width: 0; }
 .global-mode-copy strong { display: block; color: var(--text); font-size: 0.95rem; }
 .global-mode-copy p { margin: 0.35rem 0 0; color: var(--text-secondary); font-size: 0.82rem; line-height: 1.45; }
+.global-mode-status { flex: 0 0 auto; color: var(--success, #2f9e44); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 
 </style>
 
@@ -463,5 +410,6 @@ html.dark .conflict-effective {
 .global-mode-copy { min-width: 0; }
 .global-mode-copy strong { display: block; color: var(--text); font-size: 0.95rem; }
 .global-mode-copy p { margin: 0.35rem 0 0; color: var(--text-secondary); font-size: 0.82rem; line-height: 1.45; }
+.global-mode-status { flex: 0 0 auto; color: var(--success, #2f9e44); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 
 </style>
