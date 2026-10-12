@@ -356,14 +356,13 @@ fn rebuild_all_contexts(keys_iter: impl Iterator<Item = impl AsRef<str>>) {
     }
 }
 
-/// 同步 companion 日志级别：debug=true 保持 Debug（保留 fg_observer/会话等观察性日志），
-/// debug=false → Off（完全不写日志）。fork 出来的 CPU spoof 子进程会继承该级别，
-/// 因此调用点必须在 fork 之前。
+/// 同步 companion 日志级别：debug=true 保持 Debug；debug=false 仍保留 Warn/Error，
+/// 以便记录 resetprop 和属性区域重建失败。fork 出来的子进程会继承该级别。
 pub(crate) fn sync_log_level(debug: bool) {
     crate::file_logger::set_level(if debug {
         LevelFilter::Debug
     } else {
-        LevelFilter::Off
+        LevelFilter::Warn
     });
 }
 
