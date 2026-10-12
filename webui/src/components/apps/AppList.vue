@@ -1,7 +1,7 @@
 <template>
   <div class="apps-list">
     <template v-if="loading">
-      <div v-for="i in 15" :key="i" class="app-card glass-effect skeleton-item">
+      <div v-for="i in 15" :key="i" class="app-card skeleton-item">
         <div class="app-icon-container">
           <div class="skeleton-loader icon-placeholder"></div>
         </div>
@@ -17,12 +17,7 @@
     </template>
 
     <template v-else>
-      <div
-        v-for="app in apps"
-        :key="app.packageName"
-        class="app-card glass-effect"
-        @click="emit('select', app)"
-      >
+      <div v-for="app in apps" :key="app.packageName" class="app-card" @click="emit('select', app)">
         <div class="app-icon-container" :data-package="app.packageName">
           <div
             v-if="
@@ -76,7 +71,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { Smartphone, ChevronRight, Check } from 'lucide-vue-next'
+import { Smartphone, ChevronRight, Check } from '@lucide/vue'
 import { useI18n } from '../../utils/i18n'
 import { useAppIcons } from '../../composables/useAppIcons'
 import type { InstalledApp } from '../../types'
@@ -122,22 +117,36 @@ onUnmounted(() => {
   gap: 0.75rem;
 }
 
-.app-card {
+/*
+ * 列表卡片不使用 .glass-effect 毛玻璃:backdrop-filter 是 WebView 滚动中
+ * 最昂贵的绘制操作,几百张卡逐帧实时高斯模糊必然掉帧。
+ * 注意:不要写 backdrop-filter:none 去覆盖全局类——压缩器会把初始值的标准
+ * 属性删掉只留 -webkit- 前缀(Chromium 已移除该别名),导致覆盖失效;
+ * 直接从模板上摘掉 glass-effect 类才是可靠做法。
+ */
+.apps-list .app-card {
   display: flex;
   align-items: center;
   gap: 1rem;
   padding: 1rem;
   border-radius: 0.75rem;
-  box-shadow: 0 2px 8px var(--shadow);
-  transition: all 0.2s ease;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 4px var(--shadow);
+  /* 只过渡反馈需要的属性;box-shadow/背景过渡在滚动列表里是纯浪费 */
+  transition: transform 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
+  /* 跳过视口外卡片的布局/绘制(近似虚拟化),auto 关键字记录上次实际高度 */
+  contain: layout style paint;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
 }
 
-.app-card:active {
+.apps-list .app-card:active {
   transform: scale(0.98);
-  box-shadow: 0 1px 4px var(--shadow);
+  box-shadow: 0 1px 3px var(--shadow);
 }
 
 .app-icon-container {
