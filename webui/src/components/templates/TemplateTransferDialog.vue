@@ -28,6 +28,18 @@
           <h3>{{ t('templates.transfer.import.input_label') }}</h3>
           <p>{{ t('templates.transfer.import.input_hint') }}</p>
         </div>
+        <div class="import-file-toolbar">
+          <input
+            ref="importFileInput"
+            class="import-file-input"
+            type="file"
+            accept=".json,.toml,.txt,application/json,text/plain"
+            @change="handleImportFile"
+          />
+          <el-button @click="chooseImportFile">
+            {{ t('templates.transfer.import.choose_file') }}
+          </el-button>
+        </div>
         <el-input
           v-model="importInput"
           type="textarea"
@@ -234,6 +246,7 @@ const tabs = computed(() => [
 
 const activeTab = ref<TransferTab>('import')
 const importInput = ref('')
+const importFileInput = ref<HTMLInputElement | null>(null)
 const importing = ref(false)
 const selectedExportNames = ref<string[]>([])
 const deviceLoading = ref(false)
@@ -311,6 +324,7 @@ const deviceContent = computed(() => {
 function resetDialogState() {
   activeTab.value = 'import'
   importInput.value = ''
+  if (importFileInput.value) importFileInput.value.value = ''
   importing.value = false
   selectedExportNames.value = []
   deviceLoading.value = false
@@ -323,12 +337,44 @@ function formatTransferError(error: unknown) {
 
   switch (message) {
     case 'Invalid TOML content':
+    case 'Invalid TOML or device-profile JSON content':
+    case 'Invalid JSON template content':
       return t('templates.transfer.import.invalid_toml')
     case 'No valid templates found in TOML content':
     case 'No valid template data found':
       return t('templates.transfer.import.no_valid_templates')
     default:
       return message
+  }
+}
+
+function chooseImportFile() {
+  importFileInput.value?.click()
+}
+
+async function handleImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  // Avoid accidentally loading an unexpectedly large file into the WebView.
+  if (file.size > 2 * 1024 * 1024) {
+    toast(t('templates.transfer.import.file_too_large'))
+    input.value = ''
+    return
+  }
+
+  try {
+    importInput.value = await file.text()
+    if (!importInput.value.trim()) {
+      toast(t('templates.transfer.import.file_empty'))
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    toast(`${t('common.failed')}: ${message}`)
+  } finally {
+    // Allow choosing the same file again after correcting it.
+    input.value = ''
   }
 }
 
@@ -511,6 +557,16 @@ watch(templateEntries, () => {
 </script>
 
 <style scoped>
+.import-file-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.625rem;
+}
+
+.import-file-input {
+  display: none;
+}
+
 .transfer-tabs {
   display: flex;
   gap: 0.5rem;
