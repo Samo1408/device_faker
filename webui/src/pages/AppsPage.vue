@@ -10,7 +10,7 @@
 
     <template v-else>
       <AppFilters
-        v-model:search-query="searchQuery"
+        v-model:search-query="searchInput"
         v-model:filter-type="filterType"
         v-model:show-system-apps="showSystemApps"
         :total-count="visibleApps.length"
@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import AppFilters from '../components/apps/AppFilters.vue'
 import AppList from '../components/apps/AppList.vue'
 import AppsPageSkeleton from '../components/apps/AppsPageSkeleton.vue'
@@ -40,11 +40,43 @@ import { useConfigStore } from '../stores/config'
 import { useSettingsStore } from '../stores/settings'
 import { useModalHistory } from '../composables/useModalHistory'
 import { useI18n } from '../utils/i18n'
-import { normalizePackageName, parsePackageUser } from '../utils/package'
+import {
+  installedLookupKeys,
+  normalizePackageName,
+  parsePackageUser,
+  runtimeConfigKeys,
+} from '../utils/package'
 import type { InstalledApp } from '../types'
 
 type FilterType = 'all' | 'configured'
-type AppListItem = InstalledApp & { configured: boolean }
+type AppListItem = InstalledApp & {
+  configured: boolean
+  /** 预计算的小写包名/应用名,避免每次键入搜索词都对全量列表做 toLowerCase */
+  pkgLower: string
+  nameLower: string
+  /**
+   * 预计算的排序 key:归一化包名 \0 userId(补零) \0 已安装优先。
+   * 排序退化为单次字符串比较,不再在比较器里跑正则(normalizePackageName)。
+   */
+  sortKey: string
+}
+
+function buildSortKey(packageName: string, installed: boolean): string {
+  const { base, userId } = parsePackageUser(packageName)
+  return `${base}\u0000${String(userId).padStart(8, '0')}\u0000${installed ? '0' : '1'}`
+}
+
+function buildListEntry(app: InstalledApp, configured: boolean, installed: boolean): AppListItem {
+  const appName = app.appName || app.packageName
+  return {
+    ...app,
+    appName,
+    configured,
+    pkgLower: app.packageName.toLowerCase(),
+    nameLower: appName.toLowerCase(),
+    sortKey: buildSortKey(app.packageName, installed),
+  }
+}
 
 const AppConfigDialog = defineAsyncComponent(() => import('../components/apps/AppConfigDialog.vue'))
 
@@ -53,7 +85,28 @@ const appsStore = useAppsStore()
 const settingsStore = useSettingsStore()
 const { t } = useI18n()
 
-const searchQuery = ref('')
+const searchInput = ref('')
+const debouncedSearch = ref('')
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// 搜索防抖:每个键入字符只更新原始输入,150ms 静默期后才触发全量过滤+排序
+watch(searchInput, (value) => {
+  if (searchDebounceTimer !== null) {
+    clearTimeout(searchDebounceTimer)
+  }
+  searchDebounceTimer = setTimeout(() => {
+    searchDebounceTimer = null
+    debouncedSearch.value = value
+  }, 150)
+})
+
+onUnmounted(() => {
+  if (searchDebounceTimer !== null) {
+    clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = null
+  }
+})
+
 const filterType = ref<FilterType>('all')
 const configDialogVisible = ref(false)
 const currentApp = ref<InstalledApp | null>(null)
@@ -73,28 +126,23 @@ const resolvedPackageInfo = computed(() => appsStore.resolvedPackageInfo)
 
 const installedPackageState = computed(() => {
   const exactPackages = new Set<string>()
-  const normalizedPackages = new Set<string>()
 
   for (const app of installedApps.value) {
     if (app.installed === false) continue
     exactPackages.add(app.packageName)
-    normalizedPackages.add(normalizePackageName(app.packageName))
   }
 
   return {
     exactPackages,
-    normalizedPackages,
   }
 })
 
 const configuredPackageState = computed(() => {
   const exactPackages = new Set<string>()
-  const normalizedPackages = new Set<string>()
   const configuredAppsMap = new Map<string, InstalledApp>()
 
   for (const appConfig of configStore.getApps()) {
     exactPackages.add(appConfig.package)
-    normalizedPackages.add(normalizePackageName(appConfig.package))
     configuredAppsMap.set(appConfig.package, {
       packageName: appConfig.package,
       appName: appConfig.package,
@@ -106,7 +154,6 @@ const configuredPackageState = computed(() => {
     if (!template.packages) continue
     for (const pkg of template.packages) {
       exactPackages.add(pkg)
-      normalizedPackages.add(normalizePackageName(pkg))
       if (configuredAppsMap.has(pkg)) continue
 
       configuredAppsMap.set(pkg, {
@@ -120,33 +167,22 @@ const configuredPackageState = computed(() => {
   return {
     packages: Array.from(exactPackages),
     exactPackages,
-    normalizedPackages,
     configuredApps: Array.from(configuredAppsMap.values()),
   }
 })
 
 function isConfiguredPackage(packageName: string) {
-  if (configuredPackageState.value.exactPackages.has(packageName)) {
-    return true
-  }
-
-  if (!/@\d+$/.test(packageName)) {
-    return false
-  }
-
-  return configuredPackageState.value.normalizedPackages.has(normalizePackageName(packageName))
+  // 与 Rust 一致：配置项须精确命中 runtime 查找键（base@userId 或裸 base）。
+  // 禁止把 @0/@998/@999 归一化后互相认成已配置。
+  return runtimeConfigKeys(packageName).some((key) =>
+    configuredPackageState.value.exactPackages.has(key)
+  )
 }
 
 function isInstalledPackage(packageName: string) {
-  if (installedPackageState.value.exactPackages.has(packageName)) {
-    return true
-  }
-
-  if (!/@\d+$/.test(packageName)) {
-    return false
-  }
-
-  return installedPackageState.value.normalizedPackages.has(normalizePackageName(packageName))
+  return installedLookupKeys(packageName).some((key) =>
+    installedPackageState.value.exactPackages.has(key)
+  )
 }
 
 function getResolvedPackageInfo(packageName: string) {
@@ -163,11 +199,7 @@ const allApps = computed<AppListItem[]>(() => {
     const normalized = normalizePackageName(app.packageName)
     if (packageIndex.has(app.packageName)) continue
 
-    const entry = {
-      ...app,
-      installed: app.installed ?? true,
-      configured: isConfiguredPackage(app.packageName),
-    }
+    const entry = buildListEntry(app, isConfiguredPackage(app.packageName), app.installed ?? true)
 
     const idx = result.length
     result.push(entry)
@@ -186,16 +218,20 @@ const allApps = computed<AppListItem[]>(() => {
     const existingIdx = normalizedIndex.get(normalized)
     const existingApp = existingIdx !== undefined ? result[existingIdx] : undefined
     const resolvedInfo = getResolvedPackageInfo(app.packageName)
+    const installed = isInstalledPackage(app.packageName)
 
-    const entry = {
+    const entry: AppListItem = {
       packageName: app.packageName,
       appName: resolvedInfo?.appName || existingApp?.appName || app.packageName,
       icon: resolvedInfo?.icon || existingApp?.icon || '',
       versionName: resolvedInfo?.versionName || existingApp?.versionName || '',
       versionCode: resolvedInfo?.versionCode ?? existingApp?.versionCode ?? 0,
-      installed: isInstalledPackage(app.packageName),
+      installed,
       isSystem: existingApp?.isSystem ?? resolvedInfo?.isSystem ?? app.isSystem,
       configured: true,
+      pkgLower: app.packageName.toLowerCase(),
+      nameLower: (resolvedInfo?.appName || existingApp?.appName || app.packageName).toLowerCase(),
+      sortKey: buildSortKey(app.packageName, installed),
     }
 
     const idx = result.length
@@ -218,38 +254,22 @@ const configuredCount = computed(() => visibleApps.value.filter((app) => app.con
 const filteredApps = computed(() => {
   let apps = visibleApps.value
 
-  if (searchQuery.value) {
-    const q = searchQuery.value.toLowerCase()
-    apps = apps.filter(
-      (app) => app.packageName.toLowerCase().includes(q) || app.appName.toLowerCase().includes(q)
-    )
+  const q = debouncedSearch.value.toLowerCase()
+  if (q) {
+    // 使用预计算的小写字段,键入时不再对全量列表做 toLowerCase
+    apps = apps.filter((app) => app.pkgLower.includes(q) || app.nameLower.includes(q))
   }
 
   if (filterType.value === 'configured') {
     apps = apps.filter((app) => app.configured)
   }
 
-  return apps.slice().sort((a, b) => {
-    // 主键：归一化包名，让同包名（含 @userId 多用户变体）聚在一起
-    const aNorm = normalizePackageName(a.packageName)
-    const bNorm = normalizePackageName(b.packageName)
-    if (aNorm !== bNorm) return aNorm < bNorm ? -1 : 1
-
-    // 同包名：user0 优先，非零用户按 userId 升序
-    const aUser = parsePackageUser(a.packageName).userId
-    const bUser = parsePackageUser(b.packageName).userId
-    if (aUser !== bUser) return aUser - bUser
-
-    // 同包名同用户：已安装优先
-    const aInstalled = a.installed !== false
-    const bInstalled = b.installed !== false
-    if (aInstalled === bInstalled) return 0
-    return aInstalled ? -1 : 1
-  })
+  // 预计算 sortKey 后排序退化为纯字符串比较(归一化包名 → userId → 已安装优先)
+  return apps.slice().sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0))
 })
 
 const emptyText = computed(() => {
-  if (searchQuery.value) return t('apps.empty.search')
+  if (debouncedSearch.value) return t('apps.empty.search')
   if (filterType.value === 'configured') return t('apps.empty.configured')
   return t('apps.empty.all')
 })
