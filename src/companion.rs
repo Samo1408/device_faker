@@ -195,6 +195,7 @@ pub fn spoof_system_props_via_companion(
     package_name: &str,
     density: Option<u32>,
     debug: bool,
+    global_mode: bool,
 ) -> anyhow::Result<()> {
     if prop_map.is_empty() && delete_props.is_empty() && density.is_none() {
         return Ok(());
@@ -207,6 +208,7 @@ pub fn spoof_system_props_via_companion(
         package_name: package_name.to_string(),
         density,
         debug,
+        global_mode,
     });
 
     let response = send_companion_command(api, &request)?;
@@ -385,6 +387,29 @@ fn apply_resetprop_session(
             DPI_MIN,
             DPI_MAX
         );
+    }
+
+    // Global mode is persistent system-wide spoofing, not a foreground-only session.
+    // Clear any prior foreground session first so it cannot later restore stale originals.
+    if request.global_mode {
+        let mut guard = SESSION.lock().unwrap();
+        if let Some(mut old) = guard.take() {
+            if old.activated {
+                deactivate_session(&mut old, "global-mode");
+            }
+        }
+        drop(guard);
+
+        let property_result = apply_props_batch(&request.props, &request.delete_props);
+        if let Some(density) = request.density {
+            set_density(Some(density))?;
+        }
+        property_result?;
+        info!(
+            "Global mode applied persistently: {} properties set, {} deleted, dpi={:?}",
+            request.props.len(), request.delete_props.len(), request.density
+        );
+        return Ok(HashMap::new());
     }
 
     // 首次 Apply 时惰性启动前台源（UidObserver 事件驱动；失败退 0.5s 轮询）。
@@ -568,17 +593,38 @@ fn apply_props_batch(
     props: &HashMap<String, String>,
     delete_props: &[String],
 ) -> anyhow::Result<()> {
+    // One unsupported/immutable property must not prevent unrelated properties from applying.
+    // This matters especially for bootloader/baseband/SoC properties, which vary by device.
+    let mut failures = Vec::new();
+    let mut changed_keys = Vec::new();
+
     for (key, value) in props {
-        apply_resetprop(key, value)?;
+        match apply_resetprop(key, value) {
+            Ok(()) => changed_keys.push(key.as_str()),
+            Err(err) => {
+                warn!("Failed to spoof property '{key}': {err:#}");
+                failures.push(format!("{key}: {err:#}"));
+            }
+        }
     }
 
     for key in delete_props {
-        resetprop_delete(key)?;
+        match resetprop_delete(key) {
+            Ok(()) => changed_keys.push(key.as_str()),
+            Err(err) => {
+                warn!("Failed to delete property '{key}': {err:#}");
+                failures.push(format!("delete {key}: {err:#}"));
+            }
+        }
     }
 
-    rebuild_all_contexts(props.keys().chain(delete_props.iter()));
+    rebuild_all_contexts(changed_keys.into_iter());
 
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!("{} property operation(s) failed: {}", failures.len(), failures.join("; "))
+    }
 }
 
 fn restore_props_batch(backups: &HashMap<String, String>) -> anyhow::Result<()> {
@@ -717,6 +763,9 @@ pub(crate) struct ResetpropSessionRequest {
     /// 全局 debug 开关：debug=false 时 companion 完全不打印日志。
     #[serde(default)]
     debug: bool,
+    /// Apply properties persistently for system-wide mode instead of foreground-gated sessions.
+    #[serde(default)]
+    global_mode: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
