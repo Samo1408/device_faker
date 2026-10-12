@@ -7,6 +7,17 @@ use jni::{
 
 use crate::config::MergedAppConfig;
 
+/// Build 字段的有效伪装值：与 config::field_value 相同的归一化——
+/// 未设置/空串/`__DELETE__` 返回 None（跳过 hook），`__EMPTY__` 归一化为空串。
+fn field_str(field: &Option<String>) -> Option<&str> {
+    match field.as_deref() {
+        Some(value) if !value.is_empty() && value != "__DELETE__" => {
+            Some(if value == "__EMPTY__" { "" } else { value })
+        }
+        _ => None,
+    }
+}
+
 /// 根据合并配置 Hook android.os.Build 的静态字段。
 pub fn hook_build_fields(
     env: &mut EnvUnowned,
@@ -15,60 +26,62 @@ pub fn hook_build_fields(
     env.with_env(|jenv| -> Result<(), jni::errors::Error> {
         let build_class = jenv.find_class(jni_str!("android/os/Build"))?;
 
-        if let Some(manufacturer) = &merged_config.manufacturer
-            && !manufacturer.is_empty()
-        {
+        if let Some(manufacturer) = field_str(&merged_config.manufacturer) {
             set_build_field(jenv, &build_class, jni_str!("MANUFACTURER"), manufacturer)
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
-        if let Some(brand) = &merged_config.brand
-            && !brand.is_empty()
-        {
+        if let Some(brand) = field_str(&merged_config.brand) {
             set_build_field(jenv, &build_class, jni_str!("BRAND"), brand)
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
-        if let Some(model) = &merged_config.model
-            && !model.is_empty()
-        {
+        if let Some(model) = field_str(&merged_config.model) {
             set_build_field(jenv, &build_class, jni_str!("MODEL"), model)
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
-        if let Some(device) = &merged_config.device
-            && !device.is_empty()
-        {
+        if let Some(device) = field_str(&merged_config.device) {
             set_build_field(jenv, &build_class, jni_str!("DEVICE"), device)
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
-        if let Some(product) = &merged_config.product
-            && !product.is_empty()
-        {
+        if let Some(product) = field_str(&merged_config.product) {
             set_build_field(jenv, &build_class, jni_str!("PRODUCT"), product)
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
         // HARDWARE 字段
-        if let Some(hardware) = &merged_config.hardware
-            && !hardware.is_empty()
-        {
+        if let Some(hardware) = field_str(&merged_config.hardware) {
             set_build_field(jenv, &build_class, jni_str!("HARDWARE"), hardware)
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
-        if let Some(fingerprint) = &merged_config.fingerprint
-            && !fingerprint.is_empty()
-        {
+        // BOARD 字段
+        if let Some(board) = field_str(&merged_config.board) {
+            set_build_field(jenv, &build_class, jni_str!("BOARD"), board)
+                .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
+        }
+
+        // SOC_MODEL 字段（API 29+ 存在；Build.SOC_MODEL 的属性来源是 ro.soc.model）
+        if let Some(soc_model) = field_str(&merged_config.soc_model) {
+            set_build_field(jenv, &build_class, jni_str!("SOC_MODEL"), soc_model)
+                .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
+        }
+
+        if let Some(fingerprint) = field_str(&merged_config.fingerprint) {
             set_build_field(jenv, &build_class, jni_str!("FINGERPRINT"), fingerprint)
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
-        if let Some(build_id) = &merged_config.build_id
-            && !build_id.is_empty()
-        {
+        if let Some(build_id) = field_str(&merged_config.build_id) {
             set_build_field(jenv, &build_class, jni_str!("ID"), build_id)
+                .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
+        }
+
+        // Build.DISPLAY 的属性来源是 ro.build.display.id（单一属性，无分区副本）
+        if let Some(display_id) = field_str(&merged_config.display_id) {
+            set_build_field(jenv, &build_class, jni_str!("DISPLAY"), display_id)
                 .map_err(|_e| jni::errors::Error::JniCall(jni::errors::JniError::Unknown))?;
         }
 
@@ -90,14 +103,27 @@ fn hook_version_fields(
         .find_class(jni_str!("android/os/Build$VERSION"))
         .context("Failed to find Build.VERSION class")?;
 
-    if let Some(android_version) = &merged_config.android_version
-        && !android_version.is_empty()
-    {
+    if let Some(android_version) = field_str(&merged_config.android_version) {
         set_build_field(env, &version_class, jni_str!("RELEASE"), android_version)?;
     }
 
     if let Some(sdk_int) = merged_config.sdk_int {
         set_build_int_field(env, &version_class, jni_str!("SDK_INT"), sdk_int as i32)?;
+    }
+
+    // Build.VERSION.INCREMENTAL 的属性来源是 ro.build.version.incremental
+    if let Some(incremental) = field_str(&merged_config.incremental) {
+        set_build_field(env, &version_class, jni_str!("INCREMENTAL"), incremental)?;
+    }
+
+    // Build.VERSION.SECURITY_PATCH 的属性来源是 ro.build.version.security_patch
+    if let Some(security_patch) = field_str(&merged_config.security_patch) {
+        set_build_field(
+            env,
+            &version_class,
+            jni_str!("SECURITY_PATCH"),
+            security_patch,
+        )?;
     }
 
     Ok(())
