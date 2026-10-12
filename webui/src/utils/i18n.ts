@@ -53,6 +53,9 @@ export const messages = {
         module_name: '模块名称',
         author: '作者',
         communities: '社群',
+        website: '官网',
+        website_action_primary: '访问官网',
+        website_action_secondary: '文档、指南与下载',
         repository: 'GitHub 仓库',
         telegram: 'Telegram 群',
         qq_group: 'QQ群',
@@ -62,6 +65,7 @@ export const messages = {
       },
     },
     templates: {
+      global_mode: { title: '全局设备配置', description: '将第一个设备模板应用到所有应用进程，并通过 resetprop 更新系统属性；不保证覆盖启动早期或所有系统守护进程。', enabled: '已启用全局设备配置', disabled: '已关闭全局设备配置', requires_template: '请先创建或导入设备模板，再启用全局模式' },
       title: '机型模板',
       actions: {
         online: '在线模板',
@@ -78,20 +82,24 @@ export const messages = {
         device: 'Device',
         product: 'Product',
         hardware: 'Hardware',
+        board: 'Board',
+        soc_model: 'SoC Model',
         name_field: 'Name',
         market_name: 'Market Name',
         fingerprint: 'Fingerprint',
         build_id: 'Build ID',
+        display_id: 'Display ID',
+        incremental: 'Build Incremental',
+        security_patch: '安全补丁日期',
         android_version: 'Android 版本',
         sdk_int: 'SDK 版本',
+        dpi: '屏幕 DPI',
         characteristics: 'Characteristics',
         force_denylist_unmount: '强制卸载挂载点',
         packages: '应用包名列表 (可选)',
         system: '系统',
-        cpu: 'CPU 伪装',
-        cpu_spoof: 'CPU 伪装预设',
-        cpu_spoof_custom: '自定义 CPU 信息',
         companion_resetprop: 'Companion Resetprop',
+        custom_props: '自定义属性',
       },
       placeholders: {
         name: '例如：redmagic_9_pro',
@@ -101,17 +109,30 @@ export const messages = {
         device: '例如：xuanyuan，NX769J',
         product: '例如：xuanyuan，NX769J',
         hardware: '例如：qcom, mt6989',
+        board: '例如：kalama, lahaina',
+        soc_model: '例如：SM8550，Kirin 9030',
         name_field: '例如：xuanyuan',
         market_name: '例如：REDMAGIC 9 Pro',
         fingerprint:
           '例如：nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys',
         build_id: '例如：UKQ1.230917.001',
+        display_id: '例如：PD2546_16.0.9.400(CN01)',
+        incremental: '例如：compiler260228234011',
+        security_patch: '例如：2025-06-05',
         android_version: '例如：16, 15, 14',
         sdk_int: '例如：36, 35, 34',
+        dpi: '120–640，例如：420',
         characteristics: '例如：tablet',
         packages: '输入或搜索应用包名',
-        cpu_spoof: '选择 config.toml 中的 CPU 预设',
-        cpu_spoof_custom: '留空则使用上方预设；填写后将完全自定义 /proc/cpuinfo 内容',
+        custom_prop_key: '属性名，例如 ro.vendor.xxx',
+        custom_prop_value: '属性值',
+      },
+      customProps: {
+        add: '添加属性',
+        set_empty: '置空（__EMPTY__）',
+        set_delete: '删除属性（__DELETE__）',
+        manual: '手动输入值',
+        empty: '暂无自定义属性',
       },
       empty: {
         title: '暂无机型模板',
@@ -134,6 +155,16 @@ export const messages = {
         export_copy_success: '模板导出内容已复制',
         export_copy_failed: '复制失败，请手动复制',
         pkg_exists: '该包名已添加',
+      },
+      conflict: {
+        banner_title: '包名重复配置',
+        banner_desc:
+          '以下包名被多个模板同时声明，只有排在前面的模板会生效，其余被忽略。请让每个包名只挂一个模板。',
+        label: '重复包名',
+        claimed_by: '被 {names} 同时声明',
+        effective: '生效：{name}',
+        ignored: '忽略：{names}',
+        none: '没有重复配置的包名',
       },
       labels: {
         packages: '应用包名',
@@ -425,6 +456,9 @@ export const messages = {
         module_name: 'Module Name',
         author: 'Author',
         communities: 'Communities',
+        website: 'Official Website',
+        website_action_primary: 'Open Website',
+        website_action_secondary: 'Docs, guides & downloads',
         repository: 'GitHub Repository',
         telegram: 'Telegram Group',
         qq_group: 'QQ Group',
@@ -434,6 +468,7 @@ export const messages = {
       },
     },
     templates: {
+      global_mode: { title: 'Global device profile', description: 'Apply the first device template to every app process and use resetprop for system properties. Early-boot reads and every system daemon are not guaranteed to be covered.', enabled: 'Global device profile enabled', disabled: 'Global device profile disabled', requires_template: 'Create or import a device template before enabling global mode' },
       title: 'Device Templates',
       actions: {
         online: 'Online Templates',
@@ -450,20 +485,24 @@ export const messages = {
         device: 'Device',
         product: 'Product',
         hardware: 'Hardware',
+        board: 'Board',
+        soc_model: 'SoC Model',
         name_field: 'Name',
         market_name: 'Market Name',
         fingerprint: 'Fingerprint',
         build_id: 'Build ID',
+        display_id: 'Display ID',
+        incremental: 'Build Incremental',
+        security_patch: 'Security Patch',
         android_version: 'Android Version',
         sdk_int: 'SDK Version',
+        dpi: 'Screen DPI',
         characteristics: 'Characteristics',
         force_denylist_unmount: 'Force Denylist Unmount',
         packages: 'Packages (Optional)',
         system: 'System',
-        cpu: 'CPU Spoof',
-        cpu_spoof: 'CPU Spoof Preset',
-        cpu_spoof_custom: 'Custom CPU Info',
         companion_resetprop: 'Companion Resetprop',
+        custom_props: 'Custom Properties',
       },
       placeholders: {
         name: 'e.g. redmagic_9_pro',
@@ -473,18 +512,30 @@ export const messages = {
         device: 'e.g. xuanyuan, NX769J',
         product: 'e.g. xuanyuan, NX769J',
         hardware: 'e.g. qcom, mt6989',
+        board: 'e.g. kalama, lahaina',
+        soc_model: 'e.g. SM8550, Kirin 9030',
         name_field: 'e.g. xuanyuan',
         market_name: 'e.g. REDMAGIC 9 Pro',
         fingerprint:
           'e.g. nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys',
         build_id: 'e.g. UKQ1.230917.001',
+        display_id: 'e.g. PD2546_16.0.9.400(CN01)',
+        incremental: 'e.g. compiler260228234011',
+        security_patch: 'e.g. 2025-06-05',
         android_version: 'e.g. 16, 15, 14',
         sdk_int: 'e.g. 36, 35, 34',
+        dpi: '120–640, e.g. 420',
         characteristics: 'e.g. tablet',
         packages: 'Enter or search package name',
-        cpu_spoof: 'Select a CPU preset from config.toml',
-        cpu_spoof_custom:
-          'Leave empty to use the preset above; fill in to fully customize /proc/cpuinfo',
+        custom_prop_key: 'Property name, e.g. ro.vendor.xxx',
+        custom_prop_value: 'Property value',
+      },
+      customProps: {
+        add: 'Add Property',
+        set_empty: 'Set Empty (__EMPTY__)',
+        set_delete: 'Delete Property (__DELETE__)',
+        manual: 'Manual Input',
+        empty: 'No custom properties',
       },
       empty: {
         title: 'No Templates Found',
@@ -507,6 +558,16 @@ export const messages = {
         export_copy_success: 'Template export copied',
         export_copy_failed: 'Copy failed, please copy manually',
         pkg_exists: 'Package already added',
+      },
+      conflict: {
+        banner_title: 'Duplicate package assignments',
+        banner_desc:
+          'These packages are claimed by multiple templates. Only the template listed first takes effect; the rest are ignored. Assign each package to at most one template.',
+        label: 'Duplicated package',
+        claimed_by: 'Claimed by {names}',
+        effective: 'Effective: {name}',
+        ignored: 'Ignored: {names}',
+        none: 'No duplicated package assignments',
       },
       labels: {
         packages: 'Packages',
@@ -800,6 +861,9 @@ export const messages = {
         module_name: 'Modül İsmi',
         author: 'Projenin Sahibi',
         communities: 'Topluluklar',
+        website: 'Resmi Web Sitesi',
+        website_action_primary: 'Web Sitesini Aç',
+        website_action_secondary: 'Belgeler, rehberler ve indirmeler',
         repository: 'GitHub Deposu',
         telegram: 'Telegram Grubu',
         qq_group: 'QQ Grubu',
@@ -809,6 +873,7 @@ export const messages = {
       },
     },
     templates: {
+      global_mode: { title: 'Global cihaz profili', description: 'İlk cihaz şablonunu tüm uygulama süreçlerine uygular ve sistem özellikleri için resetprop kullanır; erken açılış ve tüm sistem servisleri garanti edilmez.', enabled: 'Global cihaz profili etkinleştirildi', disabled: 'Global cihaz profili devre dışı', requires_template: 'Global modu açmadan önce bir cihaz şablonu oluşturun veya içe aktarın' },
       title: 'Cihaz Şablonları',
       actions: {
         online: 'Çevrimiçi Şablonlar',
@@ -825,20 +890,24 @@ export const messages = {
         device: 'Cihaz (Device)',
         product: 'Ürün (Product)',
         hardware: 'Donanım (Hardware)',
+        board: 'Kart (Board)',
+        soc_model: 'SoC Modeli (SoC Model)',
         name_field: 'İsim',
         market_name: 'Market İsmi',
         fingerprint: 'Parmak İzi (Fingerprint)',
         build_id: 'Yapı Kimiliği (Build ID)',
+        display_id: 'Görüntü Kimliği (Display ID)',
+        incremental: 'Build Artışı (Incremental)',
+        security_patch: 'Güvenlik Yaması (Security Patch)',
         android_version: 'Android Sürümü',
         sdk_int: 'SDK Sürümü',
+        dpi: 'Ekran DPI',
         characteristics: 'Özellikler',
         force_denylist_unmount: 'Denylist Bağlantısını Kaldırmaya Zorla',
         packages: 'Paketler (Opsiyonel)',
         system: 'Sistem',
-        cpu: 'CPU Sahtekarlık',
-        cpu_spoof: 'CPU Sahtekarlık Preseti',
-        cpu_spoof_custom: 'Özel CPU Bilgisi',
         companion_resetprop: 'Companion Resetprop',
+        custom_props: 'Özel Özellikler',
       },
       placeholders: {
         name: 'redmagic_9_pro vs.',
@@ -848,17 +917,29 @@ export const messages = {
         device: 'xuanyuan, NX769J vs.',
         product: 'xuanyuan, NX769J vs.',
         hardware: 'örn. qcom, mt6989',
+        board: 'örn. kalama, lahaina',
+        soc_model: 'örn. SM8550, Kirin 9030',
         name_field: 'xuanyuan vs.',
         market_name: 'REDMAGIC 9 Pro vs.',
         fingerprint: 'nubia/NX769J/NX769J:14/UKQ1.230917.001/20240813.173312:user/release-keys vs.',
         build_id: 'UKQ1.230917.001 vs.',
+        display_id: 'PD2546_16.0.9.400(CN01) vs.',
+        incremental: 'compiler260228234011 vs.',
+        security_patch: '2025-06-05 vs.',
         android_version: '16, 15, 14 vs.',
         sdk_int: '36, 35, 34 vs.',
+        dpi: '120–640, örn. 420',
         characteristics: 'tablet vs.',
         packages: 'Paket adını girin veya arayın',
-        cpu_spoof: 'config.toml dosyasından bir CPU preset seçin',
-        cpu_spoof_custom:
-          'Yukarıdaki preset kullanmak için boş bırakın; /proc/cpuinfo içeriğini tamamen özelleştirmek için doldurun',
+        custom_prop_key: 'Özellik adı, örn. ro.vendor.xxx',
+        custom_prop_value: 'Özellik değeri',
+      },
+      customProps: {
+        add: 'Özellik Ekle',
+        set_empty: 'Boş Yap (__EMPTY__)',
+        set_delete: 'Özelliği Sil (__DELETE__)',
+        manual: 'Manuel Giriş',
+        empty: 'Özel özellik yok',
       },
       empty: {
         title: 'Hiç Şablon Bulunamadı',
@@ -882,6 +963,16 @@ export const messages = {
         export_copy_success: 'Şablon dışa aktarımı kopyalandı',
         export_copy_failed: 'Kopyalama başarısız oldu, lütfen manuel olarak kopyalayın',
         pkg_exists: 'Paket zaten eklendi',
+      },
+      conflict: {
+        banner_title: 'Yinelenen paket atamaları',
+        banner_desc:
+          'Bu paketler birden fazla şablon tarafından kullanılıyor. Yalnızca ilk şablonda geçerli olur, diğerleri yok sayılır. Her paketi en fazla bir şablona atayın.',
+        label: 'Yinelenen paket',
+        claimed_by: 'Şunlar tarafından kullanılıyor: {names}',
+        effective: 'Geçerli: {name}',
+        ignored: 'Yok sayılan: {names}',
+        none: 'Yinelenen paket ataması yok',
       },
       labels: {
         packages: 'Paketler',
@@ -1159,6 +1250,14 @@ function getNestedValue(obj: unknown, path: string): string {
   }, obj) as string
 }
 
+const translationCache = new Map<string, string>()
+
+function resolveMessage(localeKey: Locale, path: string): string | null {
+  const value = getNestedValue(messages[localeKey], path)
+  // 与旧实现一致:空字符串/非字符串视为缺失
+  return typeof value === 'string' && value ? value : null
+}
+
 export function useI18n() {
   const settingsStore = useSettingsStore()
 
@@ -1175,21 +1274,38 @@ export function useI18n() {
   })
 
   function t(path: string, args?: Record<string, string | number>): string {
-    const currentMessages = messages[locale.value]
-    let value = getNestedValue(currentMessages, path)
+    const currentLocale = locale.value
 
-    if (!value) {
+    // 无插值的查询占绝大多数(每次渲染都会重复),按 locale+path 缓存,
+    // 避免列表渲染时每张卡片反复做 path.split + reduce 对象树遍历。
+    if (!args) {
+      const cacheKey = `${currentLocale}\0${path}`
+      const cached = translationCache.get(cacheKey)
+      if (cached !== undefined) {
+        return cached
+      }
+
+      const resolved = resolveMessage(currentLocale, path)
+      if (resolved === null) {
+        console.warn(`Translation missing for key: ${path}`)
+        return path
+      }
+
+      translationCache.set(cacheKey, resolved)
+      return resolved
+    }
+
+    const value = resolveMessage(currentLocale, path)
+    if (value === null) {
       console.warn(`Translation missing for key: ${path}`)
       return path
     }
 
-    if (args) {
-      Object.entries(args).forEach(([key, val]) => {
-        value = value.replace(`{${key}}`, String(val))
-      })
+    let result = value
+    for (const [key, val] of Object.entries(args)) {
+      result = result.replace(`{${key}}`, String(val))
     }
-
-    return value
+    return result
   }
 
   return {
