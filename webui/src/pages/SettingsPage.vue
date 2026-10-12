@@ -13,11 +13,13 @@
             <p class="setting-desc">{{ t('settings.display.theme.desc') }}</p>
           </div>
         </div>
-        <el-select v-model="currentTheme" class="setting-control" @change="onThemeChange">
-          <el-option :label="t('settings.display.theme.system')" value="system" />
-          <el-option :label="t('settings.display.theme.light')" value="light" />
-          <el-option :label="t('settings.display.theme.dark')" value="dark" />
-        </el-select>
+        <BaseSelect
+          v-model="currentTheme"
+          class="setting-control"
+          :options="themeOptions"
+          :aria-label="t('settings.display.theme.label')"
+          @change="onThemeChange"
+        />
       </div>
 
       <div class="setting-item setting-item-split">
@@ -30,12 +32,13 @@
             <p class="setting-desc">{{ t('settings.display.language.desc') }}</p>
           </div>
         </div>
-        <el-select v-model="currentLanguage" class="setting-control" @change="onLanguageChange">
-          <el-option :label="t('settings.display.language.system')" value="system" />
-          <el-option :label="t('settings.display.language.zh')" value="zh" />
-          <el-option :label="t('settings.display.language.en')" value="en" />
-          <el-option :label="t('settings.display.language.tr')" value="tr" />
-        </el-select>
+        <BaseSelect
+          v-model="currentLanguage"
+          class="setting-control"
+          :options="languageOptions"
+          :aria-label="t('settings.display.language.label')"
+          @change="onLanguageChange"
+        />
       </div>
     </div>
 
@@ -113,8 +116,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onActivated } from 'vue'
-import { Moon, Globe, Bug, FileUp } from 'lucide-vue-next'
+import { ref, watch, computed, onActivated } from 'vue'
+import { Moon, Globe, Bug, FileUp } from '@lucide/vue'
 import { useConfigStore } from '../stores/config'
 import { useSettingsStore } from '../stores/settings'
 import { execCommand, readFile } from '../utils/ksu'
@@ -143,13 +146,26 @@ const convertedTemplate = ref<Template | null>(null)
 const convertedTemplateName = ref('')
 const convertedContent = ref('')
 
-function onThemeChange(value: string) {
+function onThemeChange(value: string | number) {
   settingsStore.setTheme(value as 'system' | 'light' | 'dark')
 }
 
-function onLanguageChange(value: string) {
+function onLanguageChange(value: string | number) {
   settingsStore.setLanguage(value as 'system' | 'zh' | 'en' | 'tr')
 }
+
+const themeOptions = computed(() => [
+  { value: 'system', label: t('settings.display.theme.system') },
+  { value: 'light', label: t('settings.display.theme.light') },
+  { value: 'dark', label: t('settings.display.theme.dark') },
+])
+
+const languageOptions = computed(() => [
+  { value: 'system', label: t('settings.display.language.system') },
+  { value: 'zh', label: t('settings.display.language.zh') },
+  { value: 'en', label: t('settings.display.language.en') },
+  { value: 'tr', label: t('settings.display.language.tr') },
+])
 
 async function onDebugChange(value: boolean) {
   configStore.config.debug = value
