@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowLeftRight, Plus, Download, Search, X } from 'lucide-vue-next'
+import { ArrowLeftRight, Plus, Download, Search, X } from '@lucide/vue'
 import { toRefs, ref, watch } from 'vue'
 import { useI18n } from '../../utils/i18n'
 
