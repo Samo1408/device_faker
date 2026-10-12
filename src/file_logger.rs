@@ -71,12 +71,12 @@ pub fn init() {
 
 /// 仅初始化内存缓冲模式，不打开文件。
 /// 用于 `on_load`，避免在 webview_zygote 等受限制进程中触发文件访问导致进程崩溃。
-/// 默认 Off：非 debug 全程不生成日志；确认 `config.debug = true` 后由
+/// 默认保留 Warn/Error；确认 `config.debug = true` 后由
 /// `configure_log_level` 升为 Info。
 pub fn init_buffer_only() {
     INIT_ONCE.call_once(|| {
         let _ = log::set_logger(&ADAPTIVE_LOGGER);
-        log::set_max_level(LevelFilter::Off);
+        log::set_max_level(LevelFilter::Warn);
     });
 }
 
