@@ -227,8 +227,38 @@ export function parseTemplatesFromToml(content: string): Record<string, Template
     throw new Error('TOML content is empty')
   }
 
+  // JSON device catalog entries (id/brandLabel/modelLabel/profile).
   const jsonTemplates = parseDeviceProfileJson(trimmed)
   if (jsonTemplates) return jsonTemplates
+
+  // Also accept a JSON config object, a { templates: {...} } wrapper, a single
+  // runtime template, or a map of template names to runtime template objects.
+  try {
+    const jsonValue: unknown = JSON.parse(trimmed)
+    if (isRecord(jsonValue)) {
+      if (isRecord(jsonValue.templates)) {
+        const templates = collectTemplates(jsonValue.templates)
+        if (Object.keys(templates).length > 0) return templates
+      }
+
+      if (hasTemplatePayload(jsonValue)) {
+        const template = sanitizeTemplate(jsonValue)
+        if (Object.keys(template).length > 0) {
+          const rawName = jsonValue.id ?? jsonValue.name ?? jsonValue.model
+          const name =
+            typeof rawName === 'string' && rawName.trim()
+              ? rawName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+              : 'imported_template'
+          return { [name]: template }
+        }
+      }
+
+      const mappedTemplates = collectTemplates(jsonValue)
+      if (Object.keys(mappedTemplates).length > 0) return mappedTemplates
+    }
+  } catch {
+    // Not JSON; continue with TOML parsing below.
+  }
 
   let parsed: unknown
   try {
