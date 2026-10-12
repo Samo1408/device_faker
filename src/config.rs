@@ -452,21 +452,26 @@ impl Config {
 
     /// 在全局模式下，将第一个模板作为所有应用的配置。
     pub fn get_global_merged_config(&self) -> Option<MergedAppConfig> {
-        let (_, template) = self.templates.first()?;
-        let mut global_template = template.clone();
-        global_template.packages.clear();
-        // Reuse the same merge/default-completion path as normal package mappings.
-        let mut temporary = Config {
-            default_force_denylist_unmount: self.default_force_denylist_unmount,
-            debug: self.debug,
-            global_mode: false,
-            templates: IndexMap::new(),
-            apps: Vec::new(),
-            default_hide_maps: self.default_hide_maps.clone(),
-        };
-        global_template.packages.push("__device_faker_global__".to_string());
-        temporary.templates.insert("__global__".to_string(), global_template);
-        temporary.get_merged_config("__device_faker_global__")
+        if let Some((_, template)) = self.templates.first() {
+            let mut global_template = template.clone();
+            global_template.packages.clear();
+            // Reuse the same merge/default-completion path as normal package mappings.
+            let mut temporary = Config {
+                default_force_denylist_unmount: self.default_force_denylist_unmount,
+                debug: self.debug,
+                global_mode: false,
+                templates: IndexMap::new(),
+                apps: Vec::new(),
+                default_hide_maps: self.default_hide_maps.clone(),
+            };
+            global_template.packages.push("__device_faker_global__".to_string());
+            temporary.templates.insert("__global__".to_string(), global_template);
+            return temporary.get_merged_config("__device_faker_global__");
+        }
+
+        // A config created before template import may contain only [[apps]]. In
+        // global-only mode, use its first usable profile rather than silently doing nothing.
+        self.apps.first().and_then(|app| self.get_merged_config(&app.package))
     }
 
     /// 构建合并配置的系统属性映射
