@@ -208,6 +208,9 @@ function parseDeviceProfileJson(content: string): Record<string, Template> | nul
       if (typeof value !== 'string' || !value.trim()) continue
       const property = propertyAliases[key] || (key.startsWith('ro.') || key.startsWith('persist.') || key.startsWith('gsm.') ? key : '')
       if (property) customProps[property] = value
+      // Keep both common baseband property names in sync. Some vendor builds expose
+      // ro.baseband while Android's standard telephony property is gsm.version.baseband.
+      if (key === 'baseband') customProps['ro.baseband'] = value
     }
     if (Object.keys(customProps).length) template.custom_props = customProps
 
