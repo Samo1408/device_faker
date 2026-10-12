@@ -15,6 +15,7 @@ declare module 'vue' {
     AppFilters: typeof import('./src/components/apps/AppFilters.vue')['default']
     AppList: typeof import('./src/components/apps/AppList.vue')['default']
     AppsPageSkeleton: typeof import('./src/components/apps/AppsPageSkeleton.vue')['default']
+    BaseSelect: typeof import('./src/components/shared/BaseSelect.vue')['default']
     DeviceFakerFormFields: typeof import('./src/components/shared/DeviceFakerFormFields.vue')['default']
     ElAutocomplete: typeof import('element-plus/es')['ElAutocomplete']
     ElButton: typeof import('element-plus/es')['ElButton']
@@ -23,6 +24,9 @@ declare module 'vue' {
     ElCollapse: typeof import('element-plus/es')['ElCollapse']
     ElCollapseItem: typeof import('element-plus/es')['ElCollapseItem']
     ElDialog: typeof import('element-plus/es')['ElDialog']
+    ElDropdown: typeof import('element-plus/es')['ElDropdown']
+    ElDropdownItem: typeof import('element-plus/es')['ElDropdownItem']
+    ElDropdownMenu: typeof import('element-plus/es')['ElDropdownMenu']
     ElForm: typeof import('element-plus/es')['ElForm']
     ElFormItem: typeof import('element-plus/es')['ElFormItem']
     ElIcon: typeof import('element-plus/es')['ElIcon']
@@ -30,6 +34,7 @@ declare module 'vue' {
     ElOption: typeof import('element-plus/es')['ElOption']
     ElSelect: typeof import('element-plus/es')['ElSelect']
     ElSwitch: typeof import('element-plus/es')['ElSwitch']
+    FollowDialog: typeof import('./src/components/status/FollowDialog.vue')['default']
     OnlineTemplateLibraryView: typeof import('./src/components/OnlineTemplateLibraryView.vue')['default']
     OnlineTemplateVirtualList: typeof import('./src/components/OnlineTemplateVirtualList.vue')['default']
     TemplateCard: typeof import('./src/components/templates/TemplateCard.vue')['default']
@@ -37,5 +42,6 @@ declare module 'vue' {
     TemplateHeader: typeof import('./src/components/templates/TemplateHeader.vue')['default']
     TemplateList: typeof import('./src/components/templates/TemplateList.vue')['default']
     TemplateTransferDialog: typeof import('./src/components/templates/TemplateTransferDialog.vue')['default']
+    TranslatorsDialog: typeof import('./src/components/status/TranslatorsDialog.vue')['default']
   }
 }
