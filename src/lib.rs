@@ -95,7 +95,6 @@ impl MyModule {
     ) -> anyhow::Result<()> {
         let package_name = Self::extract_package_name(env, args)?;
         let user_id = Self::extract_android_user_id(args);
-        let package_with_user = format!("{package_name}@{user_id}");
 
         // companion 侧现在自己管理会话状态和恢复逻辑；
         // Zygisk 模块侧不再需要跨应用恢复（ACTIVE_RESET_SESSION 已移除）。
@@ -123,45 +122,22 @@ impl MyModule {
             );
         }
 
-        // 同一包名被多个模板声明时，只有书写顺序最先的那个生效，其余被静默丢弃。
-        // 这是最常见的「配了 A 机型却生效了 B 机型」成因，必须留痕。
-        // 注意：非 debug 下日志级别为 Off，此告警只在 debug = true 时落盘；
-        // 用户侧的主要提示在 WebUI（保存/列表处）。
-        if config.debug {
-            for key in [package_with_user.as_str(), package_name.as_str()] {
-                let claimants = config.conflicting_templates_for_package(key);
-                if claimants.len() > 1 {
-                    warn!(
-                        "Package {key} is claimed by {} templates [{}]; only '{}' takes effect, \
-                         the rest are silently ignored. Assign a package to at most one template.",
-                        claimants.len(),
-                        claimants.join(", "),
-                        claimants[0]
-                    );
-                }
-            }
-        }
-
-        let merged = if config.global_mode {
-            config.get_global_merged_config()
-        } else {
-            config
-                .get_merged_config(&package_with_user)
-                .or_else(|| config.get_merged_config(&package_name))
-        };
-
-        let Some(mut merged) = merged else {
-            if config.debug {
-                info!("App {package_name} (user {user_id}) not in config, unloading module");
-            }
+        // TEMPORARY GLOBAL-ONLY MODE:
+        // Ignore per-app mappings and the persisted global_mode toggle. The first
+        // configured template is applied to every app process until app mode is restored.
+        let global_mode = true;
+        let Some(mut merged) = config.get_global_merged_config() else {
+            warn!("Global-only mode is enabled, but config has no usable template or app profile");
             api.set_option(ZygiskOption::DlCloseModuleLibrary);
             return Ok(());
         };
 
-        // Global mode deliberately routes property changes through companion resetprop so
-        // Android's property service/getprop sees the selected profile beyond this process.
-        if config.global_mode {
-            merged.companion_resetprop = true;
+        // Global mode must use resetprop so the values are visible system-wide,
+        // not just through per-process property-area COW.
+        merged.companion_resetprop = true;
+
+        if config.debug {
+            info!("Global profile selected for process {package_name} (user {user_id})");
         }
 
         if merged.force_denylist_unmount {
@@ -201,7 +177,7 @@ impl MyModule {
                     &package_name,
                     merged.dpi,
                     config.debug,
-                    config.global_mode,
+                    global_mode,
                 ) {
                     error!("Companion resetprop (full) failed: {e:?}");
                 } else if config.debug {
@@ -252,7 +228,7 @@ impl MyModule {
                     &package_name,
                     merged.dpi,
                     config.debug,
-                    config.global_mode,
+                    global_mode,
                 ) {
                     error!("Companion dpi failed: {e:?}");
                 } else if config.debug {
@@ -320,8 +296,9 @@ fn configure_log_level(debug_enabled: bool) {
     let level = if debug_enabled {
         LevelFilter::Info
     } else {
-        // 非 debug 不打印任何日志（Error 也不落盘）。
-        LevelFilter::Off
+        // Keep warnings/errors visible even when verbose debug logging is disabled.
+        // Otherwise a failed resetprop invocation is indistinguishable from success.
+        LevelFilter::Warn
     };
     log::set_max_level(level);
 }
