@@ -1,7 +1,16 @@
 #!/system/bin/sh
 
-# Language detection: Chinese if locale starts with "zh", otherwise English
-case "$(getprop persist.sys.locale 2>/dev/null || getprop ro.product.locale 2>/dev/null)" in
+# Language detection: Chinese if the system locale starts with "zh", otherwise English.
+LOCALE_VALUE=""
+for _locale_prop in persist.sys.locale ro.product.locale persist.sys.language ro.product.locale.language; do
+    _locale_val=$(getprop "$_locale_prop" 2>/dev/null)
+    if [ -n "$_locale_val" ]; then
+        LOCALE_VALUE="$_locale_val"
+        break
+    fi
+done
+
+case "$LOCALE_VALUE" in
     zh*) LANG_CN=true ;;
     *)   LANG_CN=false ;;
 esac
@@ -15,36 +24,15 @@ tr_print() {
 }
 
 check_zygisk() {
-    local MAGISK_DIR="/data/adb/magisk"
-
-    if find /data/adb/modules /data/adb/modules_update -name "libzygisk.so" 2>/dev/null | grep -q .; then
+    # libzygisk.so: ZygiskNext etc.; libzygisk64.so: YukiZygisk
+    if find /data/adb/modules /data/adb/modules_update /data/adb/ksu/lib \( -name "libzygisk.so" -o -name "libzygisk64.so" \) 2>/dev/null | grep -q .; then
         return 0
     fi
 
-    if [ -d "$MAGISK_DIR" ]; then
-        local ZYGISK_STATUS
-        ZYGISK_STATUS=$(magisk --sqlite "SELECT value FROM settings WHERE key='zygisk';")
-        if [ "$ZYGISK_STATUS" = "value=0" ]; then
-            if $LANG_CN; then
-                abort "! Zygisk 未启用。请执行以下操作之一：
-  - 在 Magisk 设置中启用 Zygisk
-  - 安装 ZygiskNext 模块"
-            else
-                abort "! Zygisk is not enabled. Please either:
-  - Enable Zygisk in Magisk settings
-  - Install ZygiskNext module"
-            fi
-        fi
+    if $LANG_CN; then
+        abort "! 未检测到 Zygisk 实现。请安装 ZygiskNext 模块（不支持 Magisk 自带 Zygisk）"
     else
-        if $LANG_CN; then
-            abort "! Zygisk 未启用。请执行以下操作之一：
-  - 在 Magisk 设置中启用 Zygisk
-  - 安装 ZygiskNext 模块"
-        else
-            abort "! Zygisk is not enabled. Please either:
-  - Enable Zygisk in Magisk settings
-  - Install ZygiskNext module"
-        fi
+        abort "! No Zygisk implementation found. Please install ZygiskNext (Magisk built-in Zygisk is not supported)"
     fi
 }
 
