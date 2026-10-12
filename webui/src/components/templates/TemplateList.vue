@@ -21,7 +21,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { FileText } from 'lucide-vue-next'
+import { FileText } from '@lucide/vue'
 import TemplateCard from './TemplateCard.vue'
 import { useI18n } from '../../utils/i18n'
 import type { Template } from '../../types'
