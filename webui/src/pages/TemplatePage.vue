@@ -16,6 +16,40 @@
           @search="handleSearch"
         />
 
+        <section class="global-mode-panel">
+          <div class="global-mode-copy">
+            <strong>{{ t('templates.global_mode.title') }}</strong>
+            <p>{{ t('templates.global_mode.description') }}</p>
+          </div>
+          <el-switch
+            :model-value="configStore.config.global_mode === true"
+            :loading="globalModeSaving"
+            @change="setGlobalMode"
+          />
+        </section>
+
+        <div v-if="conflictingPackages.length > 0" class="conflict-banner">
+          <div class="conflict-banner-head">
+            <strong>{{ t('templates.conflict.banner_title') }}</strong>
+          </div>
+          <p class="conflict-banner-desc">{{ t('templates.conflict.banner_desc') }}</p>
+          <ul class="conflict-list">
+            <li v-for="conflict in conflictingPackages" :key="conflict.packageName">
+              <code class="conflict-pkg">{{ conflict.packageName }}</code>
+              <span class="conflict-effective">
+                {{ t('templates.conflict.effective', { name: conflict.templates[0] }) }}
+              </span>
+              <span class="conflict-ignored">
+                {{
+                  t('templates.conflict.ignored', {
+                    names: conflict.templates.slice(1).join(', '),
+                  })
+                }}
+              </span>
+            </li>
+          </ul>
+        </div>
+
         <TemplateList
           :entries="filteredTemplates"
           :is-searching="searchQuery.length > 0"
@@ -52,6 +86,7 @@ import { useModalHistory } from '../composables/useModalHistory'
 import { useI18n } from '../utils/i18n'
 import { useLazyMessageBox } from '../utils/elementPlus'
 import { copyTextToClipboard, stringifyTemplatesToToml } from '../utils/templateTransfer'
+import { findConflictingPackages } from '../utils/config'
 import { toast } from 'kernelsu-alt'
 import type { Template } from '../types'
 
@@ -69,11 +104,38 @@ const { t, locale } = useI18n()
 const getMessageBox = useLazyMessageBox()
 
 const searchQuery = ref('')
+const globalModeSaving = ref(false)
 const viewTransitionName = ref<'template-library-forward' | 'template-library-back'>(
   'template-library-forward'
 )
 
+async function setGlobalMode(value: string | number | boolean) {
+  if (globalModeSaving.value) return
+  const previous = configStore.config.global_mode === true
+  configStore.config.global_mode = value === true
+  globalModeSaving.value = true
+  try {
+    if (configStore.config.global_mode && configStore.templateEntries.length === 0) {
+      throw new Error(t('templates.global_mode.requires_template'))
+    }
+    await configStore.saveConfig()
+    toast(t(configStore.config.global_mode ? 'templates.global_mode.enabled' : 'templates.global_mode.disabled'))
+  } catch (error) {
+    configStore.config.global_mode = previous
+    const message = error instanceof Error ? error.message : String(error)
+    toast(`${t('common.failed')}: ${message}`)
+  } finally {
+    globalModeSaving.value = false
+  }
+}
+
 const allTemplates = computed(() => configStore.templateEntries)
+
+/**
+ * 被多个模板同时声明的包名。运行时只取第一个模板，其余静默忽略
+ * —— 这是「配了三星却生效 iQOO」的根因，必须在模板页显式告警。
+ */
+const conflictingPackages = computed(() => findConflictingPackages(allTemplates.value))
 
 const filteredTemplates = computed(() => {
   if (!searchQuery.value.trim()) {
@@ -91,6 +153,8 @@ const filteredTemplates = computed(() => {
       template.device || '',
       template.manufacturer || '',
       template.product || '',
+      template.board || '',
+      template.soc_model || '',
     ]
 
     const matches = searchFields.some((field) => field.toLowerCase().includes(query))
@@ -221,6 +285,68 @@ onActivated(() => {
   width: 100%;
 }
 
+/* 包名重复配置告警：多个模板声明同一包名时只有第一个生效 */
+.conflict-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--el-text-color-primary, inherit);
+}
+
+.conflict-banner-head strong {
+  color: #b45309;
+}
+
+.conflict-banner-desc {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+.conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conflict-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.conflict-pkg {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 0.25rem;
+  background: rgba(127, 127, 127, 0.15);
+}
+
+.conflict-effective {
+  color: #b45309;
+}
+
+.conflict-ignored {
+  opacity: 0.7;
+  text-decoration: line-through;
+}
+
+html.dark .conflict-banner-head strong,
+html.dark .conflict-effective {
+  color: #fbbf24;
+}
+
 .template-library-forward-enter-active,
 .template-library-forward-leave-active,
 .template-library-back-enter-active,
@@ -280,6 +406,22 @@ onActivated(() => {
     transform: none;
   }
 }
+
+.global-mode-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  background: var(--card);
+}
+.global-mode-copy { min-width: 0; }
+.global-mode-copy strong { display: block; color: var(--text); font-size: 0.95rem; }
+.global-mode-copy p { margin: 0.35rem 0 0; color: var(--text-secondary); font-size: 0.82rem; line-height: 1.45; }
+
 </style>
 
 <style>
@@ -306,4 +448,20 @@ onActivated(() => {
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
 }
+
+.global-mode-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  background: var(--card);
+}
+.global-mode-copy { min-width: 0; }
+.global-mode-copy strong { display: block; color: var(--text); font-size: 0.95rem; }
+.global-mode-copy p { margin: 0.35rem 0 0; color: var(--text-secondary); font-size: 0.82rem; line-height: 1.45; }
+
 </style>
