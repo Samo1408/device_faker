@@ -18,6 +18,9 @@ const TEMPLATE_SIGNAL_KEYS = [
   'marketname',
   'fingerprint',
   'build_id',
+  'display_id',
+  'incremental',
+  'security_patch',
   'characteristics',
   'android_version',
   'sdk_int',
@@ -147,17 +150,91 @@ export async function dumpCurrentDeviceToToml(outputPath: string) {
   await runCliCommand(['dump-device', '-o', shellQuote(outputPath)])
 }
 
+/** Import a device catalog JSON entry (for example { id, brandLabel, modelLabel, profile }). */
+function parseDeviceProfileJson(content: string): Record<string, Template> | null {
+  let root: unknown
+  try {
+    root = JSON.parse(content)
+  } catch {
+    return null
+  }
+  if (!isRecord(root)) return null
+
+  // Accept either one catalog entry, a { devices: [...] } catalog, or an array of entries.
+  const candidates: unknown[] = Array.isArray(root) ? root :
+    Array.isArray(root.devices) ? root.devices : [root]
+  const result: Record<string, Template> = {}
+  const propertyAliases: Record<string, string> = {
+    bootloader: 'ro.bootloader',
+    baseband: 'gsm.version.baseband',
+    boardPlatform: 'ro.board.platform',
+    socManufacturer: 'ro.soc.manufacturer',
+    buildFlavor: 'ro.build.flavor',
+    buildProduct: 'ro.build.product',
+    buildDescription: 'ro.build.description',
+  }
+
+  for (const item of candidates) {
+    if (!isRecord(item) || !isRecord(item.profile)) continue
+    const profile = item.profile
+    const template: Template = {}
+    const copy = (source: string, target: keyof Template) => {
+      const value = profile[source]
+      if (typeof value === 'string' && value.trim()) {
+        // Template fields are string-valued except numeric/boolean metadata.
+        ;(template as unknown as Record<string, unknown>)[target] = value
+      }
+    }
+    copy('manufacturer', 'manufacturer')
+    copy('brand', 'brand')
+    copy('model', 'model')
+    copy('productName', 'name')
+    copy('deviceCode', 'device')
+    copy('productName', 'product')
+    copy('hardware', 'hardware')
+    copy('board', 'board')
+    copy('socModel', 'soc_model')
+    copy('buildFingerprint', 'fingerprint')
+    copy('buildId', 'build_id')
+    copy('buildDisplayId', 'display_id')
+    copy('buildIncremental', 'incremental')
+    copy('securityPatch', 'security_patch')
+    copy('buildCharacteristics', 'characteristics')
+
+    const androidVersion = profile.androidVersion
+    if (typeof androidVersion === 'string' && androidVersion.trim()) template.android_version = androidVersion
+    const customProps: Record<string, string> = {}
+    for (const [key, value] of Object.entries(profile)) {
+      if (typeof value !== 'string' || !value.trim()) continue
+      const property = propertyAliases[key] || (key.startsWith('ro.') || key.startsWith('persist.') || key.startsWith('gsm.') ? key : '')
+      if (property) customProps[property] = value
+    }
+    if (Object.keys(customProps).length) template.custom_props = customProps
+
+    const name = typeof item.id === 'string' && item.id.trim()
+      ? item.id.trim()
+      : typeof item.modelLabel === 'string' && item.modelLabel.trim()
+        ? item.modelLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+        : `imported_device_${Object.keys(result).length + 1}`
+    if (Object.keys(template).length) result[name] = template
+  }
+  return Object.keys(result).length ? result : null
+}
+
 export function parseTemplatesFromToml(content: string): Record<string, Template> {
   const trimmed = content.trim()
   if (!trimmed) {
     throw new Error('TOML content is empty')
   }
 
+  const jsonTemplates = parseDeviceProfileJson(trimmed)
+  if (jsonTemplates) return jsonTemplates
+
   let parsed: unknown
   try {
     parsed = parseToml(trimmed)
   } catch {
-    throw new Error('Invalid TOML content')
+    throw new Error('Invalid TOML or device-profile JSON content')
   }
 
   if (isRecord(parsed) && isRecord(parsed.templates)) {
