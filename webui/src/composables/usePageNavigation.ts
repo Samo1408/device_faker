@@ -1,5 +1,5 @@
 import { computed, defineAsyncComponent, defineComponent, h, ref } from 'vue'
-import { Home, FileText, Smartphone, Settings } from 'lucide-vue-next'
+import { FileText, House, Settings, Smartphone } from '@lucide/vue'
 import AppsPageSkeleton from '../components/apps/AppsPageSkeleton.vue'
 import { useAppsStore } from '../stores/apps'
 import { useConfigStore } from '../stores/config'
@@ -111,7 +111,7 @@ export function usePageNavigation(opts?: {
   })
 
   const pages = computed(() => [
-    { id: 'home' as const, label: t('nav.home'), icon: Home, component: StatusPage },
+    { id: 'home' as const, label: t('nav.home'), icon: House, component: StatusPage },
     {
       id: 'templates' as const,
       label: t('nav.templates'),
