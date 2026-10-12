@@ -9,92 +9,6 @@
 #
 # debug = true 可开启详细日志（默认关闭，隐蔽性更好）
 # default_force_denylist_unmount = true 可全局启用 FORCE_DENYLIST_UNMOUNT
-# default_cpu_spoof = "kirin_9030pro" 可设置全局默认 CPU 伪装预设
-
-# CPU 伪装预设表
-# 在模板或 [[apps]] 中使用 cpu_spoof = "预设名称" 引用
-[cpu_presets]
-kirin_9030pro = """Processor       : AArch64 Processor rev 0 (aarch64)
-Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit ilrcpc flagm ssbs sb pacg dcpodp flagm2 frint svei8mm i8mm bti
-CPU implementer : 0x48
-CPU architecture: 8
-CPU variant     : 0x0
-CPU part        : 0xd06
-CPU revision    : 0
-
-processor       : 0
-BogoMIPS        : 38.40
-CPU implementer : 0x48
-CPU architecture: 8
-CPU variant     : 0x0
-CPU part        : 0xd06
-CPU revision    : 0
-
-processor       : 1
-BogoMIPS        : 38.40
-CPU implementer : 0x48
-CPU architecture: 8
-CPU variant     : 0x1
-CPU part        : 0xd47
-CPU revision    : 0
-
-processor       : 2
-BogoMIPS        : 38.40
-CPU implementer : 0x48
-CPU architecture: 8
-CPU variant     : 0x1
-CPU part        : 0xd47
-CPU revision    : 0
-
-processor       : 3
-BogoMIPS        : 38.40
-CPU implementer : 0x48
-CPU architecture: 8
-CPU variant     : 0x1
-CPU part        : 0xd47
-CPU revision    : 0
-
-processor       : 4
-BogoMIPS        : 38.40
-CPU implementer : 0x48
-CPU architecture: 8
-CPU variant     : 0x1
-CPU part        : 0xd47
-CPU revision    : 0
-
-processor       : 5
-BogoMIPS        : 38.40
-CPU implementer : 0x41
-CPU architecture: 8
-CPU variant     : 0x0
-CPU part        : 0xd46
-CPU revision    : 0
-
-processor       : 6
-BogoMIPS        : 38.40
-CPU implementer : 0x41
-CPU architecture: 8
-CPU variant     : 0x0
-CPU part        : 0xd46
-CPU revision    : 0
-
-processor       : 7
-BogoMIPS        : 38.40
-CPU implementer : 0x41
-CPU architecture: 8
-CPU variant     : 0x0
-CPU part        : 0xd46
-CPU revision    : 0
-
-processor       : 8
-BogoMIPS        : 38.40
-CPU implementer : 0x41
-CPU architecture: 8
-CPU variant     : 0x0
-CPU part        : 0xd46
-CPU revision    : 0
-
-Hardware        : HiSilicon Kirin 9030 Pro"""
 
 # 调试模式（默认关闭以提高隐蔽性）
 # 设置为 true 后详细日志写入 /data/adb/device_faker/logs/device_faker.log
@@ -254,7 +168,7 @@ manufacturer = "vivo"
 #   ② 属性伪装                   — companion_resetprop = true 时全部走
 #                                  companion resetprop；否则 COW 优先，
 #                                  COW 未找到的属性与 __DELETE__ 走 companion
-#   ③ CPU 伪装                   — 按需（仅 cpu_spoof / cpu_spoof_custom 时）
+#   ③ DPI 伪装                   — 按需（仅设置 dpi 时）
 #   ④ DlClose                    — 始终执行（零模块驻留）
 #
 # 用户不再需要理解 lite/full/companion 的区别。
@@ -276,7 +190,6 @@ manufacturer = "vivo"
 # 设置属性值为 "__DELETE__" 可通过 companion resetprop 删除该属性。
 # 设置属性值为 "__EMPTY__" 将属性值设为空字符串。
 #
-# 【CPU 伪装】
-# 在模板或 [[apps]] 中设置 cpu_spoof 引用 cpu_presets 预设，
-# 或直接设置 cpu_spoof_custom 自定义 /proc/cpuinfo 内容。
-# 有 CPU 伪装配置时，自动通过 companion fork + setns + bind mount 实现。
+# 【DPI 伪装】
+# 在模板或 [[apps]] 中设置 dpi = 420。
+# 保存原始值，并在应用退后台/退出后自动恢复（切后台约 0.5s 后恢复）。
