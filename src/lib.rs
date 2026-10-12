@@ -201,6 +201,7 @@ impl MyModule {
                     &package_name,
                     merged.dpi,
                     config.debug,
+                    config.global_mode,
                 ) {
                     error!("Companion resetprop (full) failed: {e:?}");
                 } else if config.debug {
@@ -251,6 +252,7 @@ impl MyModule {
                     &package_name,
                     merged.dpi,
                     config.debug,
+                    config.global_mode,
                 ) {
                     error!("Companion dpi failed: {e:?}");
                 } else if config.debug {
