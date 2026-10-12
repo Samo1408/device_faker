@@ -65,7 +65,7 @@ export const messages = {
       },
     },
     templates: {
-      global_mode: { title: '全局设备配置', description: '将第一个设备模板应用到所有应用进程，并通过 resetprop 更新系统属性；不保证覆盖启动早期或所有系统守护进程。', enabled: '已启用全局设备配置', disabled: '已关闭全局设备配置', requires_template: '请先创建或导入设备模板，再启用全局模式' },
+      global_mode: { title: '全局设备配置', description: '临时固定为全局模式：第一个设备模板会应用到所有应用进程，并通过 resetprop 更新系统属性；应用专属模式暂时停用。系统启动早期及未加载 Zygisk 的进程不保证覆盖。', enabled: '已启用全局设备配置', disabled: '已关闭全局设备配置', requires_template: '请先创建或导入设备模板，再启用全局模式' },
       title: '机型模板',
       actions: {
         online: '在线模板',
@@ -471,7 +471,7 @@ export const messages = {
       },
     },
     templates: {
-      global_mode: { title: 'Global device profile', description: 'Apply the first device template to every app process and use resetprop for system properties. Early-boot reads and every system daemon are not guaranteed to be covered.', enabled: 'Global device profile enabled', disabled: 'Global device profile disabled', requires_template: 'Create or import a device template before enabling global mode' },
+      global_mode: { title: 'Global device profile', description: 'Temporary global-only mode: the first device template is applied to every app process and resetprop updates system properties. Per-app profiles are temporarily disabled. Early-boot reads and processes outside Zygisk are not guaranteed to be covered.', enabled: 'Global device profile enabled', disabled: 'Global device profile disabled', requires_template: 'Create or import a device template before enabling global mode' },
       title: 'Device Templates',
       actions: {
         online: 'Online Templates',
@@ -879,7 +879,7 @@ export const messages = {
       },
     },
     templates: {
-      global_mode: { title: 'Global cihaz profili', description: 'İlk cihaz şablonunu tüm uygulama süreçlerine uygular ve sistem özellikleri için resetprop kullanır; erken açılış ve tüm sistem servisleri garanti edilmez.', enabled: 'Global cihaz profili etkinleştirildi', disabled: 'Global cihaz profili devre dışı', requires_template: 'Global modu açmadan önce bir cihaz şablonu oluşturun veya içe aktarın' },
+      global_mode: { title: 'Global cihaz profili', description: 'Geçici olarak yalnızca global mod etkin: ilk cihaz şablonu tüm uygulama süreçlerine uygulanır ve sistem özellikleri resetprop ile güncellenir. Uygulamaya özel profiller geçici olarak devre dışıdır. Erken açılış ve Zygisk dışındaki süreçler garanti edilmez.', enabled: 'Global cihaz profili etkinleştirildi', disabled: 'Global cihaz profili devre dışı', requires_template: 'Global modu açmadan önce bir cihaz şablonu oluşturun veya içe aktarın' },
       title: 'Cihaz Şablonları',
       actions: {
         online: 'Çevrimiçi Şablonlar',
