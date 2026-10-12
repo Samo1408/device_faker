@@ -99,14 +99,20 @@ export function usePageSwipe(opts: {
   let dragLastX = 0
   let dragLastTime = 0
 
+  // .page-track 是 App.vue 模板中的静态节点，缓存引用避免 pointermove 等高频路径
+  // 每帧执行 querySelector；仅在缓存节点脱离文档（HMR/重挂载）时重新查询。
+  let trackCache: HTMLElement | null = null
+
   function getActiveIndex() {
     return PAGE_ORDER.indexOf(activePage.value)
   }
 
   function getTrack(): HTMLElement | null {
+    if (trackCache && trackCache.isConnected) return trackCache
     const stage = pageStageRef.value
     if (!stage) return null
-    return stage.querySelector('.page-track') as HTMLElement | null
+    trackCache = stage.querySelector('.page-track') as HTMLElement | null
+    return trackCache
   }
 
   function applyDragTransform(offsetPx: number) {
