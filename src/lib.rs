@@ -3,20 +3,21 @@ mod atexit;
 mod companion;
 mod config;
 mod cow_props;
-mod cpu_spoof;
+#[cfg(target_os = "android")]
+mod fg_observer;
 #[cfg(target_os = "android")]
 mod file_logger;
 mod hooks;
+mod prop_backend;
 
 use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::Context;
 use companion::{handle_companion_request, spoof_system_props_via_companion};
 use config::Config;
-use cpu_spoof::{apply_cpu_spoof, apply_cpu_spoof_unmount};
 use hooks::hook_build_fields;
 use jni::{EnvUnowned, errors::ThrowRuntimeExAndDefault};
-use log::{LevelFilter, error, info};
+use log::{LevelFilter, error, info, warn};
 use zygisk_api::{
     ZygiskModule,
     api::{V4, ZygiskApi, v4::ZygiskOption},
@@ -122,28 +123,46 @@ impl MyModule {
             );
         }
 
-        let merged = config
-            .get_merged_config(&package_with_user)
-            .or_else(|| config.get_merged_config(&package_name));
+        // 同一包名被多个模板声明时，只有书写顺序最先的那个生效，其余被静默丢弃。
+        // 这是最常见的「配了 A 机型却生效了 B 机型」成因，必须留痕。
+        // 注意：非 debug 下日志级别为 Off，此告警只在 debug = true 时落盘；
+        // 用户侧的主要提示在 WebUI（保存/列表处）。
+        if config.debug {
+            for key in [package_with_user.as_str(), package_name.as_str()] {
+                let claimants = config.conflicting_templates_for_package(key);
+                if claimants.len() > 1 {
+                    warn!(
+                        "Package {key} is claimed by {} templates [{}]; only '{}' takes effect, \
+                         the rest are silently ignored. Assign a package to at most one template.",
+                        claimants.len(),
+                        claimants.join(", "),
+                        claimants[0]
+                    );
+                }
+            }
+        }
 
-        let Some(merged) = merged else {
+        let merged = if config.global_mode {
+            config.get_global_merged_config()
+        } else {
+            config
+                .get_merged_config(&package_with_user)
+                .or_else(|| config.get_merged_config(&package_name))
+        };
+
+        let Some(mut merged) = merged else {
             if config.debug {
                 info!("App {package_name} (user {user_id}) not in config, unloading module");
-            }
-            // 即使应用未在 config 中，仍可能因其他 spoofed app 的 bind mount 泄漏而受影响。
-            // 主动卸载可能存在的 /proc/cpuinfo bind mount，确保本应用 namespace 干净。
-            // 内部 spoof_active_flag_exists() 检查决定是否走完整路径，
-            // 无 spoofed app 活跃时仅 1 次 access syscall (~13μs)。
-            // 不使用 config.has_any_cpu_spoof() 短路：config 热加载删除 cpu_spoof
-            // 配置后，仍活跃的 spoofed app 会因配置态判据脱节导致泄漏未清理。
-            if let Err(e) = apply_cpu_spoof_unmount(api, config.debug) {
-                error!("CPU spoof unmount failed for unconfigured {package_name}: {e:?}");
-            } else if config.debug {
-                info!("CPU spoof unmount applied for unconfigured {package_name}");
             }
             api.set_option(ZygiskOption::DlCloseModuleLibrary);
             return Ok(());
         };
+
+        // Global mode deliberately routes property changes through companion resetprop so
+        // Android's property service/getprop sees the selected profile beyond this process.
+        if config.global_mode {
+            merged.companion_resetprop = true;
+        }
 
         if merged.force_denylist_unmount {
             api.set_option(ZygiskOption::ForceDenylistUnmount);
@@ -174,10 +193,15 @@ impl MyModule {
         if merged.companion_resetprop {
             // 全属性走 companion resetprop（getprop 和进程内读取一致）
             let delete_props = Config::build_delete_props_list(&merged);
-            if !prop_map.is_empty() || !delete_props.is_empty() {
-                if let Err(e) =
-                    spoof_system_props_via_companion(api, &prop_map, &delete_props, &package_name)
-                {
+            if !prop_map.is_empty() || !delete_props.is_empty() || merged.dpi.is_some() {
+                if let Err(e) = spoof_system_props_via_companion(
+                    api,
+                    &prop_map,
+                    &delete_props,
+                    &package_name,
+                    merged.dpi,
+                    config.debug,
+                ) {
                     error!("Companion resetprop (full) failed: {e:?}");
                 } else if config.debug {
                     info!(
@@ -188,7 +212,10 @@ impl MyModule {
                 }
             }
         } else {
-            // 默认路径：COW 处理，companion 只处理未找到属性和 __DELETE__
+            // 严格 COW：COW 无法处理的属性不再降级为全局 resetprop——
+            // 自动 fallback 会修改全局属性（getprop/其他 app 可见），破坏
+            // COW 模式的 per-process 隔离承诺。需要全局生效（getprop 子进程
+            // 可见、__DELETE__ 删除属性）时显式开启 companion_resetprop。
             let unfound_props = match cow_props::apply_cow_spoof(&prop_map) {
                 Ok(unfound) => unfound,
                 Err(e) => {
@@ -197,45 +224,42 @@ impl MyModule {
                 }
             };
 
+            for (key, value) in &unfound_props {
+                warn!(
+                    "Strict COW cannot apply '{key}' ({} bytes) for {package_name}; \
+                     enable companion_resetprop for global fallback",
+                    value.len()
+                );
+            }
+
             let delete_props = Config::build_delete_props_list(&merged);
-            if !unfound_props.is_empty() || !delete_props.is_empty() {
-                let unfound_map: HashMap<String, String> = unfound_props.into_iter().collect();
+            for key in &delete_props {
+                warn!(
+                    "Strict COW cannot delete '{key}' for {package_name}; \
+                     enable companion_resetprop to use __DELETE__"
+                );
+            }
+
+            // dpi 与属性伪装无关（companion 经 wm density 修改全局 settings），
+            // 配置了仍走 companion。
+            if merged.dpi.is_some() {
+                let empty: HashMap<String, String> = HashMap::new();
                 if let Err(e) = spoof_system_props_via_companion(
                     api,
-                    &unfound_map,
-                    &delete_props,
+                    &empty,
+                    &[],
                     &package_name,
+                    merged.dpi,
+                    config.debug,
                 ) {
-                    error!("Companion resetprop failed: {e:?}");
+                    error!("Companion dpi failed: {e:?}");
                 } else if config.debug {
-                    info!(
-                        "Companion resetprop: {} new + {} delete for {package_name}",
-                        unfound_map.len(),
-                        delete_props.len()
-                    );
+                    info!("Companion dpi applied for {package_name}");
                 }
             }
         }
 
-        // ④ Companion 按需：CPU spoof
-        //    - 配置了 cpu_spoof: 走原有 apply_cpu_spoof 流程
-        //    - 未配置 cpu_spoof: 主动卸载可能泄漏到本应用 namespace 的 /proc/cpuinfo
-        //      bind mount（内部 spoof_active_flag_exists() 决定是否走完整路径）
-        if merged.cpuinfo_content.is_some() {
-            if let Err(e) = apply_cpu_spoof(api, &merged, &package_name, config.debug) {
-                error!("CPU spoof failed: {e:?}");
-            } else if config.debug {
-                info!("CPU spoof applied for {package_name}");
-            }
-        } else {
-            if let Err(e) = apply_cpu_spoof_unmount(api, config.debug) {
-                error!("CPU spoof unmount failed: {e:?}");
-            } else if config.debug {
-                info!("CPU spoof unmount applied for {package_name}");
-            }
-        }
-
-        // ⑤ DlClose（始终执行）
+        // ③ DlClose（始终执行）
         api.set_option(ZygiskOption::DlCloseModuleLibrary);
         Ok(())
     }
@@ -294,7 +318,8 @@ fn configure_log_level(debug_enabled: bool) {
     let level = if debug_enabled {
         LevelFilter::Info
     } else {
-        LevelFilter::Error
+        // 非 debug 不打印任何日志（Error 也不落盘）。
+        LevelFilter::Off
     };
     log::set_max_level(level);
 }
