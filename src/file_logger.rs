@@ -71,11 +71,18 @@ pub fn init() {
 
 /// 仅初始化内存缓冲模式，不打开文件。
 /// 用于 `on_load`，避免在 webview_zygote 等受限制进程中触发文件访问导致进程崩溃。
+/// 默认 Off：非 debug 全程不生成日志；确认 `config.debug = true` 后由
+/// `configure_log_level` 升为 Info。
 pub fn init_buffer_only() {
     INIT_ONCE.call_once(|| {
         let _ = log::set_logger(&ADAPTIVE_LOGGER);
-        log::set_max_level(LevelFilter::Debug);
+        log::set_max_level(LevelFilter::Off);
     });
+}
+
+/// 运行时调整日志级别（两个进程共用，各按自身策略传入目标级别）。
+pub fn set_level(level: LevelFilter) {
+    log::set_max_level(level);
 }
 
 /// 取出当前缓冲的所有日志行。仅 Zygisk 进程使用。
