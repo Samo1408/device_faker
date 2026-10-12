@@ -16,18 +16,22 @@ export interface DeviceInfo {
   device?: string
   product?: string
   hardware?: string
+  board?: string
+  soc_model?: string
   name?: string
   marketname?: string
   fingerprint?: string
   build_id?: string
+  display_id?: string
+  incremental?: string
+  security_patch?: string
   characteristics?: string
   android_version?: string
   sdk_int?: number
+  dpi?: number
   custom_props?: CustomProps
   force_denylist_unmount?: boolean
   companion_resetprop?: boolean
-  cpu_spoof?: string
-  cpu_spoof_custom?: string
 }
 
 // 机型模板接口
@@ -106,10 +110,9 @@ export interface OnlineTemplateCacheEntry<T> {
 
 // 配置文件接口
 export interface Config {
+  global_mode?: boolean
   default_force_denylist_unmount?: boolean
   debug?: boolean
-  default_cpu_spoof?: string
-  cpu_presets?: Record<string, string>
   templates?: Record<string, Template>
   apps?: AppConfig[]
 }
