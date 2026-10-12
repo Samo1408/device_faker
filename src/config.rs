@@ -1,7 +1,186 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use indexmap::IndexMap;
 use serde::Deserialize;
+
+pub const DPI_MIN: u32 = 120;
+pub const DPI_MAX: u32 = 640;
+
+fn valid_dpi(value: Option<u32>) -> Option<u32> {
+    value.filter(|dpi| (DPI_MIN..=DPI_MAX).contains(dpi))
+}
+
+/// `ro.product.*` 会按属性来源顺序读取不同分区的副本。模板字段必须同步这些副本，
+/// 否则检测程序可以从另一个分区读回真机值。
+const PRODUCT_PARTITION_PREFIXES: &[&str] = &[
+    "odm",
+    "vendor",
+    "system",
+    "system_ext",
+    "product",
+    "bootimage",
+];
+
+/// 新版 Android 还为动态内核模块分区导出独立构建信息。
+const BUILD_PARTITION_PREFIXES: &[&str] = &[
+    "system",
+    "system_ext",
+    "product",
+    "vendor",
+    "odm",
+    "bootimage",
+    "system_dlkm",
+    "vendor_dlkm",
+    "odm_dlkm",
+];
+
+/// Android 构建指纹格式：brand/product/device:release/id/incremental:type/tags
+struct FingerprintParts {
+    brand: String,
+    product: String,
+    device: String,
+    release: String,
+    build_id: String,
+    incremental: String,
+    build_type: String,
+    tags: String,
+}
+
+impl FingerprintParts {
+    /// 解析标准格式指纹；字段数不符或存在空字段时返回 None（视为未配置指纹，
+    /// 不做任何补全）。
+    fn parse(fingerprint: &str) -> Option<Self> {
+        let (identity, build) = fingerprint.split_once(':')?;
+        let (version, variant) = build.split_once(':')?;
+
+        let mut identity_parts = identity.split('/');
+        let brand = identity_parts.next()?;
+        let product = identity_parts.next()?;
+        let device = identity_parts.next()?;
+        if identity_parts.next().is_some() {
+            return None;
+        }
+
+        let mut version_parts = version.split('/');
+        let release = version_parts.next()?;
+        let build_id = version_parts.next()?;
+        let incremental = version_parts.next()?;
+        if version_parts.next().is_some() {
+            return None;
+        }
+
+        let mut variant_parts = variant.split('/');
+        let build_type = variant_parts.next()?;
+        let tags = variant_parts.next()?;
+        if variant_parts.next().is_some()
+            || [
+                brand,
+                product,
+                device,
+                release,
+                build_id,
+                incremental,
+                build_type,
+                tags,
+            ]
+            .iter()
+            .any(|part| part.is_empty())
+        {
+            return None;
+        }
+
+        Some(Self {
+            brand: brand.to_string(),
+            product: product.to_string(),
+            device: device.to_string(),
+            release: release.to_string(),
+            build_id: build_id.to_string(),
+            incremental: incremental.to_string(),
+            build_type: build_type.to_string(),
+            tags: tags.to_string(),
+        })
+    }
+}
+
+fn has_profile_value(value: &Option<String>) -> bool {
+    value.as_ref().is_some_and(|value| !value.is_empty())
+}
+
+fn fill_profile_default(target: &mut Option<String>, value: impl Into<String>) {
+    if !has_profile_value(target) {
+        *target = Some(value.into());
+    }
+}
+
+/// 顶层字段的有效伪装值：未设置、空串或 `__DELETE__`（走删除列表）返回 None，
+/// `__EMPTY__` 归一化为空字符串。
+fn field_value(field: &Option<String>) -> Option<String> {
+    match field.as_deref() {
+        Some(value) if !value.is_empty() && value != "__DELETE__" => {
+            Some(if value == "__EMPTY__" {
+                String::new()
+            } else {
+                value.to_string()
+            })
+        }
+        _ => None,
+    }
+}
+
+/// 为 `ro.product.<suffix>` 写入全部分区副本（bionic prefix routing 可能读取任一副本）。
+fn insert_product_family(map: &mut HashMap<String, String>, suffix: &str, value: &str) {
+    map.insert(format!("ro.product.{suffix}"), value.to_string());
+    for partition in PRODUCT_PARTITION_PREFIXES {
+        map.insert(
+            format!("ro.product.{partition}.{suffix}"),
+            value.to_string(),
+        );
+    }
+}
+
+/// 为 `ro.build.<suffix>` 写入全部分区副本（含动态内核模块分区）。
+fn insert_build_family(map: &mut HashMap<String, String>, suffix: &str, value: &str) {
+    map.insert(format!("ro.build.{suffix}"), value.to_string());
+    for partition in BUILD_PARTITION_PREFIXES {
+        map.insert(format!("ro.{partition}.build.{suffix}"), value.to_string());
+    }
+}
+
+fn delete_product_family(delete_props: &mut Vec<String>, suffix: &str) {
+    delete_props.push(format!("ro.product.{suffix}"));
+    for partition in PRODUCT_PARTITION_PREFIXES {
+        delete_props.push(format!("ro.product.{partition}.{suffix}"));
+    }
+}
+
+fn delete_build_family(delete_props: &mut Vec<String>, suffix: &str) {
+    delete_props.push(format!("ro.build.{suffix}"));
+    for partition in BUILD_PARTITION_PREFIXES {
+        delete_props.push(format!("ro.{partition}.build.{suffix}"));
+    }
+}
+
+/// custom_props 中已知属性族的 key 自动整族展开；未知 key 不展开，
+/// 随后的精确 key 写入仍具有最高优先级。
+fn expand_known_custom_property(map: &mut HashMap<String, String>, key: &str, value: &str) {
+    match key {
+        "ro.product.manufacturer" => insert_product_family(map, "manufacturer", value),
+        "ro.product.brand" => insert_product_family(map, "brand", value),
+        "ro.product.model" => insert_product_family(map, "model", value),
+        "ro.product.name" => insert_product_family(map, "name", value),
+        "ro.product.device" => insert_product_family(map, "device", value),
+        "ro.product.marketname" => insert_product_family(map, "marketname", value),
+        "ro.build.fingerprint" => insert_build_family(map, "fingerprint", value),
+        "ro.build.id" => insert_build_family(map, "id", value),
+        "ro.build.version.release" => insert_build_family(map, "version.release", value),
+        "ro.build.version.sdk" => insert_build_family(map, "version.sdk", value),
+        "ro.build.version.incremental" => insert_build_family(map, "version.incremental", value),
+        "ro.build.type" => insert_build_family(map, "type", value),
+        "ro.build.tags" => insert_build_family(map, "tags", value),
+        _ => {}
+    }
+}
 
 /// 机型模板
 #[derive(Debug, Clone, Deserialize)]
@@ -27,9 +206,23 @@ pub struct DeviceTemplate {
     #[serde(default)]
     pub hardware: Option<String>,
     #[serde(default)]
+    pub board: Option<String>,
+    /// SoC 型号伪装（映射 Build.SOC_MODEL + ro.soc.model，单属性无分区副本）
+    #[serde(default)]
+    pub soc_model: Option<String>,
+    #[serde(default)]
     pub fingerprint: Option<String>,
     #[serde(default)]
     pub build_id: Option<String>,
+    /// 系统版本号（映射 Build.DISPLAY + ro.build.display.id，单属性无分区副本）
+    #[serde(default)]
+    pub display_id: Option<String>,
+    /// 构建增量号（映射 Build.VERSION.INCREMENTAL + ro.build.version.incremental 族）
+    #[serde(default)]
+    pub incremental: Option<String>,
+    /// 安全补丁日期（映射 Build.VERSION.SECURITY_PATCH + ro.build.version.security_patch 族）
+    #[serde(default)]
+    pub security_patch: Option<String>,
     #[serde(default)]
     pub characteristics: Option<String>,
     /// Android 版本伪装（如 "15", "14"）
@@ -38,18 +231,15 @@ pub struct DeviceTemplate {
     /// SDK 版本伪装（如 35, 34）
     #[serde(default)]
     pub sdk_int: Option<u32>,
+    /// 临时覆盖系统显示密度（120–640），由 companion 使用 `wm density` 应用
+    #[serde(default)]
+    pub dpi: Option<u32>,
     /// 自定义属性映射表
     #[serde(default)]
     pub custom_props: Option<HashMap<String, String>>,
     /// 是否为匹配的应用强制执行 FORCE_DENYLIST_UNMOUNT（默认继承全局设置）
     #[serde(default)]
     pub force_denylist_unmount: Option<bool>,
-    /// CPU 伪装预设名称（引用 [cpu_presets]）
-    #[serde(default)]
-    pub cpu_spoof: Option<String>,
-    /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
-    #[serde(default)]
-    pub cpu_spoof_custom: Option<String>,
     /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
     #[serde(default)]
     pub hide_maps: Option<Vec<String>>,
@@ -80,9 +270,23 @@ pub struct AppConfig {
     #[serde(default)]
     pub hardware: Option<String>,
     #[serde(default)]
+    pub board: Option<String>,
+    /// SoC 型号伪装（映射 Build.SOC_MODEL + ro.soc.model，单属性无分区副本）
+    #[serde(default)]
+    pub soc_model: Option<String>,
+    #[serde(default)]
     pub fingerprint: Option<String>,
     #[serde(default)]
     pub build_id: Option<String>,
+    /// 系统版本号（映射 Build.DISPLAY + ro.build.display.id，单属性无分区副本）
+    #[serde(default)]
+    pub display_id: Option<String>,
+    /// 构建增量号（映射 Build.VERSION.INCREMENTAL + ro.build.version.incremental 族）
+    #[serde(default)]
+    pub incremental: Option<String>,
+    /// 安全补丁日期（映射 Build.VERSION.SECURITY_PATCH + ro.build.version.security_patch 族）
+    #[serde(default)]
+    pub security_patch: Option<String>,
     #[serde(default)]
     pub characteristics: Option<String>,
     /// Android 版本伪装（如 "15", "14"）
@@ -91,18 +295,15 @@ pub struct AppConfig {
     /// SDK 版本伪装（如 35, 34）
     #[serde(default)]
     pub sdk_int: Option<u32>,
+    /// 临时覆盖系统显示密度（120–640），由 companion 使用 `wm density` 应用
+    #[serde(default)]
+    pub dpi: Option<u32>,
     /// 自定义属性映射表
     #[serde(default)]
     pub custom_props: Option<HashMap<String, String>>,
     /// 是否为该应用强制执行 FORCE_DENYLIST_UNMOUNT（默认继承全局设置）
     #[serde(default)]
     pub force_denylist_unmount: Option<bool>,
-    /// CPU 伪装预设名称（引用 [cpu_presets]）
-    #[serde(default)]
-    pub cpu_spoof: Option<String>,
-    /// 自定义 CPU 伪装内容（优先级高于 cpu_spoof）
-    #[serde(default)]
-    pub cpu_spoof_custom: Option<String>,
     /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认继承全局设置）
     #[serde(default)]
     pub hide_maps: Option<Vec<String>>,
@@ -120,18 +321,19 @@ pub struct Config {
     /// 是否启用调试日志（默认关闭以提高隐蔽性）
     #[serde(default)]
     pub debug: bool,
-    /// 机型设备模板定义
+    /// 对所有应用进程应用模板列表中的第一个模板；默认关闭。
     #[serde(default)]
-    pub templates: HashMap<String, DeviceTemplate>,
+    pub global_mode: bool,
+    /// 机型设备模板定义
+    ///
+    /// 用 IndexMap 而非 HashMap：保留 config.toml 中的书写顺序，使
+    /// find_template_for_package 在「同一包名被多个模板声明」时命中确定的
+    /// 那一个（书写顺序靠前者），而不是 HashMap 的进程级随机迭代顺序。
+    #[serde(default)]
+    pub templates: IndexMap<String, DeviceTemplate>,
     /// 应用配置
     #[serde(default)]
     pub apps: Vec<AppConfig>,
-    /// 全局默认 CPU 伪装预设名称
-    #[serde(default)]
-    pub default_cpu_spoof: Option<String>,
-    /// CPU 伪装预设表
-    #[serde(default)]
-    pub cpu_presets: HashMap<String, String>,
     /// 要从 /proc/self/maps 中清除的属性映射模式列表（默认不启用）
     #[serde(default)]
     pub default_hide_maps: Vec<String>,
@@ -148,10 +350,27 @@ impl Config {
     }
 
     /// 查找包名对应的模板（从模板的 packages 列表中查找）
+    ///
+    /// 多个模板声明同一包名时命中**书写顺序最先**的那一个。Config.templates 是
+    /// IndexMap（配合 toml 的 preserve_order），顺序即 config.toml 中的出现顺序，
+    /// 因此结果是确定的、跨进程一致的——不依赖 HashMap 的随机迭代顺序。
     pub fn find_template_for_package(&self, package_name: &str) -> Option<&DeviceTemplate> {
         self.templates
-            .values()
-            .find(|template| template.packages.iter().any(|pkg| pkg == package_name))
+            .iter()
+            .find(|(_, template)| template.packages.iter().any(|pkg| pkg == package_name))
+            .map(|(_, template)| template)
+    }
+
+    /// 找出所有声明了该包名的模板名（按书写顺序）。
+    ///
+    /// 长度 > 1 表示配置存在歧义：只有第一个会真正生效，其余被静默丢弃。
+    /// 用于诊断日志/告警，调用方可据此提示用户「一个包只应挂一个模板」。
+    pub fn conflicting_templates_for_package(&self, package_name: &str) -> Vec<&str> {
+        self.templates
+            .iter()
+            .filter(|(_, template)| template.packages.iter().any(|pkg| pkg == package_name))
+            .map(|(name, _)| name.as_str())
+            .collect()
     }
 
     /// 获取应用的最终配置（优先查找直接配置，其次查找模板的 packages 列表）
@@ -167,25 +386,28 @@ impl Config {
                 device: app.device.clone(),
                 product: app.product.clone(),
                 hardware: app.hardware.clone(),
+                board: app.board.clone(),
+                soc_model: app.soc_model.clone(),
                 fingerprint: app.fingerprint.clone(),
                 build_id: app.build_id.clone(),
+                display_id: app.display_id.clone(),
+                incremental: app.incremental.clone(),
+                security_patch: app.security_patch.clone(),
                 characteristics: app.characteristics.clone(),
                 android_version: app.android_version.clone(),
                 sdk_int: app.sdk_int,
+                dpi: valid_dpi(app.dpi),
                 custom_props: app.custom_props.clone(),
                 force_denylist_unmount: app
                     .force_denylist_unmount
                     .unwrap_or(self.default_force_denylist_unmount),
-                cpu_spoof: app.cpu_spoof.clone(),
-                cpu_spoof_custom: app.cpu_spoof_custom.clone(),
-                cpuinfo_content: None,
                 hide_maps: app
                     .hide_maps
                     .clone()
                     .unwrap_or_else(|| self.default_hide_maps.clone()),
                 companion_resetprop: app.companion_resetprop.unwrap_or(false),
             };
-            merged.cpuinfo_content = merged.resolve_cpuinfo(self);
+            merged.complete_device_profile();
             return Some(merged);
         }
 
@@ -200,29 +422,51 @@ impl Config {
                 device: template.device.clone(),
                 product: template.product.clone(),
                 hardware: template.hardware.clone(),
+                board: template.board.clone(),
+                soc_model: template.soc_model.clone(),
                 fingerprint: template.fingerprint.clone(),
                 build_id: template.build_id.clone(),
+                display_id: template.display_id.clone(),
+                incremental: template.incremental.clone(),
+                security_patch: template.security_patch.clone(),
                 characteristics: template.characteristics.clone(),
                 android_version: template.android_version.clone(),
                 sdk_int: template.sdk_int,
+                dpi: valid_dpi(template.dpi),
                 custom_props: template.custom_props.clone(),
                 force_denylist_unmount: template
                     .force_denylist_unmount
                     .unwrap_or(self.default_force_denylist_unmount),
-                cpu_spoof: template.cpu_spoof.clone(),
-                cpu_spoof_custom: template.cpu_spoof_custom.clone(),
-                cpuinfo_content: None,
                 hide_maps: template
                     .hide_maps
                     .clone()
                     .unwrap_or_else(|| self.default_hide_maps.clone()),
                 companion_resetprop: template.companion_resetprop.unwrap_or(false),
             };
-            merged.cpuinfo_content = merged.resolve_cpuinfo(self);
+            merged.complete_device_profile();
             return Some(merged);
         }
 
         None
+    }
+
+    /// 在全局模式下，将第一个模板作为所有应用的配置。
+    pub fn get_global_merged_config(&self) -> Option<MergedAppConfig> {
+        let (_, template) = self.templates.first()?;
+        let mut global_template = template.clone();
+        global_template.packages.clear();
+        // Reuse the same merge/default-completion path as normal package mappings.
+        let mut temporary = Config {
+            default_force_denylist_unmount: self.default_force_denylist_unmount,
+            debug: self.debug,
+            global_mode: false,
+            templates: IndexMap::new(),
+            apps: Vec::new(),
+            default_hide_maps: self.default_hide_maps.clone(),
+        };
+        global_template.packages.push("__device_faker_global__".to_string());
+        temporary.templates.insert("__global__".to_string(), global_template);
+        temporary.get_merged_config("__device_faker_global__")
     }
 
     /// 构建合并配置的系统属性映射
@@ -231,102 +475,80 @@ impl Config {
     pub fn build_merged_property_map(merged: &MergedAppConfig) -> HashMap<String, String> {
         let mut map = HashMap::new();
 
-        // 分区特定前缀：OnePlus/OPPO 等设备 bionic prefix routing 会读取这些变体
-        const PARTITION_PREFIXES: &[&str] = &[
-            "odm",
-            "vendor",
-            "system",
-            "system_ext",
-            "product",
-            "bootimage",
-        ];
-
-        if let Some(manufacturer) = &merged.manufacturer
-            && !manufacturer.is_empty()
-        {
-            map.insert("ro.product.manufacturer".to_string(), manufacturer.clone());
-            for pfx in PARTITION_PREFIXES {
-                map.insert(
-                    format!("ro.product.{pfx}.manufacturer"),
-                    manufacturer.clone(),
-                );
-            }
+        // 分区副本同步：bionic prefix routing 可能从任一分区的 prop_area 读取，
+        // 检测程序也可以直接指定分区变体读回真机值，必须整族写入。
+        if let Some(manufacturer) = field_value(&merged.manufacturer) {
+            insert_product_family(&mut map, "manufacturer", &manufacturer);
         }
-        if let Some(brand) = &merged.brand
-            && !brand.is_empty()
-        {
-            map.insert("ro.product.brand".to_string(), brand.clone());
-            for pfx in PARTITION_PREFIXES {
-                map.insert(format!("ro.product.{pfx}.brand"), brand.clone());
-            }
+        if let Some(brand) = field_value(&merged.brand) {
+            insert_product_family(&mut map, "brand", &brand);
         }
-        if let Some(marketname) = &merged.marketname
-            && !marketname.is_empty()
-        {
-            map.insert("ro.product.marketname".to_string(), marketname.clone());
+        if let Some(marketname) = field_value(&merged.marketname) {
+            insert_product_family(&mut map, "marketname", &marketname);
             // OnePlus/OPPO 设备读 ro.vendor.oplus.market.name 而非 ro.product.marketname
             map.insert(
                 "ro.vendor.oplus.market.name".to_string(),
                 marketname.clone(),
             );
         }
-        if let Some(model) = &merged.model
-            && !model.is_empty()
-        {
-            map.insert("ro.product.model".to_string(), model.clone());
-            for pfx in PARTITION_PREFIXES {
-                map.insert(format!("ro.product.{pfx}.model"), model.clone());
-            }
-        }
-        if let Some(name) = &merged.name
-            && !name.is_empty()
-        {
-            map.insert("ro.product.name".to_string(), name.clone());
-            for pfx in PARTITION_PREFIXES {
-                map.insert(format!("ro.product.{pfx}.name"), name.clone());
-            }
-        }
-        if let Some(device) = &merged.device
-            && !device.is_empty()
-        {
-            map.insert("ro.product.device".to_string(), device.clone());
-            for pfx in PARTITION_PREFIXES {
-                map.insert(format!("ro.product.{pfx}.device"), device.clone());
-            }
-        } else if let Some(name) = &merged.name
-            && !name.is_empty()
-        {
-            // Fallback to name if device is not set (legacy behavior)
-            map.insert("ro.product.device".to_string(), name.clone());
-            for pfx in PARTITION_PREFIXES {
-                map.insert(format!("ro.product.{pfx}.device"), name.clone());
-            }
+        if let Some(model) = field_value(&merged.model) {
+            insert_product_family(&mut map, "model", &model);
         }
 
-        if let Some(hardware) = &merged.hardware
-            && !hardware.is_empty()
-        {
-            map.insert("ro.hardware".to_string(), hardware.clone());
+        // Build.PRODUCT 的属性来源是 ro.product.name；product 与 name 已在
+        // complete_device_profile 中同步为同一个产品代号，这里取非空值写入。
+        if let Some(product) = field_value(&merged.product).or_else(|| field_value(&merged.name)) {
+            insert_product_family(&mut map, "name", &product);
+            map.insert("ro.build.product".to_string(), product.clone());
         }
 
-        if let Some(fingerprint) = &merged.fingerprint
-            && !fingerprint.is_empty()
-        {
-            map.insert("ro.build.fingerprint".to_string(), fingerprint.clone());
+        if let Some(device) = field_value(&merged.device) {
+            insert_product_family(&mut map, "device", &device);
         }
 
-        if let Some(build_id) = &merged.build_id
-            && !build_id.is_empty()
-        {
-            map.insert("ro.build.id".to_string(), build_id.clone());
-            map.insert("ro.system.build.id".to_string(), build_id.clone());
-            map.insert("ro.vendor.build.id".to_string(), build_id.clone());
-            map.insert("ro.product.build.id".to_string(), build_id.clone());
+        if let Some(hardware) = field_value(&merged.hardware) {
+            map.insert("ro.hardware".to_string(), hardware);
         }
 
-        if let Some(characteristics) = &merged.characteristics
-            && !characteristics.is_empty()
-        {
+        // Build.BOARD 的属性来源是 ro.product.board（单一属性，AOSP 不导出分区
+        // 副本——真实设备上只有这一个 key，插入不存在的分区变体会制造可被枚举
+        // 检测的幽灵属性，故与 ro.hardware 同形态、不做整族展开）。
+        if let Some(board) = field_value(&merged.board) {
+            map.insert("ro.product.board".to_string(), board);
+        }
+
+        // Build.SOC_MODEL 的属性来源是 ro.soc.model（单一属性，同 hardware/board
+        // 形态，无分区变体）。
+        if let Some(soc_model) = field_value(&merged.soc_model) {
+            map.insert("ro.soc.model".to_string(), soc_model);
+        }
+
+        if let Some(fingerprint) = field_value(&merged.fingerprint) {
+            insert_build_family(&mut map, "fingerprint", &fingerprint);
+        }
+
+        if let Some(build_id) = field_value(&merged.build_id) {
+            insert_build_family(&mut map, "id", &build_id);
+        }
+
+        // Build.DISPLAY 的属性来源是 ro.build.display.id（单一属性，同 hardware/board）
+        if let Some(display_id) = field_value(&merged.display_id) {
+            map.insert("ro.build.display.id".to_string(), display_id);
+        }
+
+        if let Some(incremental) = field_value(&merged.incremental) {
+            insert_build_family(&mut map, "version.incremental", &incremental);
+        }
+
+        // Build.VERSION.SECURITY_PATCH 的属性来源是 ro.build.version.security_patch，
+        // 各分区（system/vendor/product 等）均导出自己的副本，与 version.sdk 同族。
+        if let Some(security_patch) = field_value(&merged.security_patch) {
+            insert_build_family(&mut map, "version.security_patch", &security_patch);
+            // vendor 分区另导出一个无 .version. 段的裸名副本
+            map.insert("ro.vendor.build.security_patch".to_string(), security_patch);
+        }
+
+        if let Some(characteristics) = field_value(&merged.characteristics) {
             map.insert(
                 "ro.build.characteristics".to_string(),
                 characteristics.clone(),
@@ -334,95 +556,101 @@ impl Config {
         }
 
         // Android 版本伪装属性
-        if let Some(android_version) = &merged.android_version
-            && !android_version.is_empty()
-        {
-            map.insert(
-                "ro.build.version.release".to_string(),
-                android_version.clone(),
-            );
-            map.insert(
-                "ro.system.build.version.release".to_string(),
-                android_version.clone(),
-            );
-            map.insert(
-                "ro.vendor.build.version.release".to_string(),
-                android_version.clone(),
-            );
-            map.insert(
-                "ro.product.build.version.release".to_string(),
-                android_version.clone(),
-            );
+        if let Some(android_version) = field_value(&merged.android_version) {
+            insert_build_family(&mut map, "version.release", &android_version);
         }
 
         if let Some(sdk_int) = merged.sdk_int {
             let sdk_str = sdk_int.to_string();
-            map.insert("ro.build.version.sdk".to_string(), sdk_str.clone());
-            map.insert("ro.system.build.version.sdk".to_string(), sdk_str.clone());
-            map.insert("ro.vendor.build.version.sdk".to_string(), sdk_str.clone());
-            map.insert("ro.product.build.version.sdk".to_string(), sdk_str.clone());
+            insert_build_family(&mut map, "version.sdk", &sdk_str);
         }
 
-        // 自定义属性
+        // 自定义属性：已知属性族先整族展开，精确 key 随后覆盖（优先级最高）
         if let Some(custom_props) = &merged.custom_props {
             for (key, value) in custom_props {
                 if value == "__DELETE__" {
                     continue;
                 }
-                let final_value = if value == "__EMPTY__" {
-                    "".to_string()
-                } else {
-                    value.clone()
-                };
-                map.insert(key.clone(), final_value);
+                let final_value = if value == "__EMPTY__" { "" } else { value };
+                expand_known_custom_property(&mut map, key, final_value);
+            }
+            for (key, value) in custom_props {
+                if value == "__DELETE__" {
+                    continue;
+                }
+                let final_value = if value == "__EMPTY__" { "" } else { value };
+                map.insert(key.clone(), final_value.to_string());
             }
         }
 
         map
     }
 
-    /// 构建需要删除的属性列表（用于 companion 模式）
+    /// 构建需要删除的属性列表（用于 companion 模式）。
+    /// 与 build_merged_property_map 的属性族展开保持对称：
+    /// `__DELETE__` 删除整个属性族（含全部分区副本）。
     pub fn build_delete_props_list(merged: &MergedAppConfig) -> Vec<String> {
         let mut delete_props = Vec::new();
 
         if merged.brand.as_ref().is_some_and(|s| s == "__DELETE__") {
-            delete_props.push("ro.product.brand".to_string());
+            delete_product_family(&mut delete_props, "brand");
         }
         if merged
             .manufacturer
             .as_ref()
             .is_some_and(|s| s == "__DELETE__")
         {
-            delete_props.push("ro.product.manufacturer".to_string());
+            delete_product_family(&mut delete_props, "manufacturer");
         }
         if merged.model.as_ref().is_some_and(|s| s == "__DELETE__") {
-            delete_props.push("ro.product.model".to_string());
+            delete_product_family(&mut delete_props, "model");
         }
         if merged.name.as_ref().is_some_and(|s| s == "__DELETE__") {
-            delete_props.push("ro.product.name".to_string());
+            delete_product_family(&mut delete_props, "name");
+            delete_props.push("ro.build.product".to_string());
         }
         if merged.device.as_ref().is_some_and(|s| s == "__DELETE__") {
-            delete_props.push("ro.product.device".to_string());
+            delete_product_family(&mut delete_props, "device");
         }
         if merged
             .marketname
             .as_ref()
             .is_some_and(|s| s == "__DELETE__")
         {
-            delete_props.push("ro.product.marketname".to_string());
+            delete_product_family(&mut delete_props, "marketname");
+            delete_props.push("ro.vendor.oplus.market.name".to_string());
         }
         if merged
             .fingerprint
             .as_ref()
             .is_some_and(|s| s == "__DELETE__")
         {
-            delete_props.push("ro.build.fingerprint".to_string());
+            delete_build_family(&mut delete_props, "fingerprint");
         }
         if merged.build_id.as_ref().is_some_and(|s| s == "__DELETE__") {
-            delete_props.push("ro.build.id".to_string());
-            delete_props.push("ro.system.build.id".to_string());
-            delete_props.push("ro.vendor.build.id".to_string());
-            delete_props.push("ro.product.build.id".to_string());
+            delete_build_family(&mut delete_props, "id");
+        }
+        if merged
+            .display_id
+            .as_ref()
+            .is_some_and(|s| s == "__DELETE__")
+        {
+            delete_props.push("ro.build.display.id".to_string());
+        }
+        if merged
+            .incremental
+            .as_ref()
+            .is_some_and(|s| s == "__DELETE__")
+        {
+            delete_build_family(&mut delete_props, "version.incremental");
+        }
+        if merged
+            .security_patch
+            .as_ref()
+            .is_some_and(|s| s == "__DELETE__")
+        {
+            delete_build_family(&mut delete_props, "version.security_patch");
+            delete_props.push("ro.vendor.build.security_patch".to_string());
         }
         if merged
             .characteristics
@@ -433,6 +661,9 @@ impl Config {
         }
         if merged.hardware.as_ref().is_some_and(|s| s == "__DELETE__") {
             delete_props.push("ro.hardware".to_string());
+        }
+        if merged.board.as_ref().is_some_and(|s| s == "__DELETE__") {
+            delete_props.push("ro.product.board".to_string());
         }
 
         if let Some(custom_props) = &merged.custom_props {
@@ -458,19 +689,23 @@ pub struct MergedAppConfig {
     pub device: Option<String>,
     pub product: Option<String>,
     pub hardware: Option<String>,
+    pub board: Option<String>,
+    pub soc_model: Option<String>,
     pub fingerprint: Option<String>,
     pub build_id: Option<String>,
+    /// 系统版本号 → Build.DISPLAY + ro.build.display.id
+    pub display_id: Option<String>,
+    /// 构建增量号 → Build.VERSION.INCREMENTAL + ro.build.version.incremental 族
+    pub incremental: Option<String>,
+    /// 安全补丁日期 → Build.VERSION.SECURITY_PATCH + ro.build.version.security_patch 族
+    pub security_patch: Option<String>,
     pub characteristics: Option<String>,
     pub android_version: Option<String>,
     pub sdk_int: Option<u32>,
+    /// 最终显示密度覆盖值，超出 120–640 的配置会被忽略
+    pub dpi: Option<u32>,
     pub custom_props: Option<HashMap<String, String>>,
     pub force_denylist_unmount: bool,
-    /// CPU 伪装预设名称
-    pub cpu_spoof: Option<String>,
-    /// 自定义 CPU 伪装内容
-    pub cpu_spoof_custom: Option<String>,
-    /// 最终要挂载到 /proc/cpuinfo 的内容（已解析完成）
-    pub cpuinfo_content: Option<String>,
     /// 要从 /proc/self/maps 中清除的属性映射模式列表
     pub hide_maps: Vec<String>,
     /// 是否跳过 COW，所有属性走 companion resetprop（默认 false）
@@ -478,19 +713,55 @@ pub struct MergedAppConfig {
 }
 
 impl MergedAppConfig {
-    /// 计算最终 CPU 伪装内容
-    pub fn resolve_cpuinfo(&self, config: &Config) -> Option<String> {
-        if let Some(custom) = &self.cpu_spoof_custom
-            && !custom.is_empty()
-        {
-            return Some(custom.clone());
+    /// 用构建指纹补齐未显式填写的标准字段，并同步指纹内携带的构建信息。
+    ///
+    /// 显式模板字段始终优先；指纹只负责补空，不会覆盖用户主动设置的
+    /// 品牌、设备代号等。指纹携带的 incremental/type/tags 以 custom_props
+    /// 条目形式补入（不覆盖用户显式配置），随后按属性族展开生效。
+    fn complete_device_profile(&mut self) {
+        let parsed = self
+            .fingerprint
+            .as_deref()
+            .and_then(FingerprintParts::parse);
+
+        if let Some(parts) = &parsed {
+            fill_profile_default(&mut self.brand, parts.brand.clone());
+            fill_profile_default(&mut self.product, parts.product.clone());
+            fill_profile_default(&mut self.device, parts.device.clone());
+            fill_profile_default(&mut self.android_version, parts.release.clone());
+            fill_profile_default(&mut self.build_id, parts.build_id.clone());
+            // 指纹 incremental 同步进专用字段，保证 Build.VERSION.INCREMENTAL 与
+            // ro.build.version.incremental 一致（原先只进 custom_props 会漏 hook）
+            fill_profile_default(&mut self.incremental, parts.incremental.clone());
         }
 
-        let preset_name = self
-            .cpu_spoof
-            .as_ref()
-            .or(config.default_cpu_spoof.as_ref())?;
+        // Build.PRODUCT 的属性来源是 ro.product.name，而本项目的 product 与
+        // name 语义相同（产品代号）。两者必须同步，否则 JNI 字段与系统属性
+        // 会分别显示新旧值。
+        if !has_profile_value(&self.product)
+            && let Some(name) = self.name.as_ref().filter(|value| !value.is_empty())
+        {
+            self.product = Some(name.clone());
+        }
+        if !has_profile_value(&self.name)
+            && let Some(product) = self.product.as_ref().filter(|value| !value.is_empty())
+        {
+            self.name = Some(product.clone());
+        }
+        if !has_profile_value(&self.device)
+            && let Some(product) = self.product.as_ref().filter(|value| !value.is_empty())
+        {
+            self.device = Some(product.clone());
+        }
 
-        config.cpu_presets.get(preset_name).cloned()
+        if let Some(parts) = parsed {
+            let props = self.custom_props.get_or_insert_with(HashMap::new);
+            props
+                .entry("ro.build.type".to_string())
+                .or_insert(parts.build_type);
+            props
+                .entry("ro.build.tags".to_string())
+                .or_insert(parts.tags);
+        }
     }
 }
